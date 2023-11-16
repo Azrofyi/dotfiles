@@ -1,0 +1,37 @@
+{
+  /*
+   * Editor
+   */
+
+  "editor.accessibilitySupport": "off",
+
+  "editor.cursorBlinking": "smooth",
+  "editor.cursorSmoothCaretAnimation": "on",
+  "editor.smoothScrolling": true,
+
+  "editor.guides.bracketPairs": "active",
+
+  "editor.inlineSuggest.enabled": true,
+
+  "editor.suggestSelection": "first",
+
+  "editor.lineNumbers": "interval",
+  "editor.showFoldingControls": "always",
+
+  "editor.renderWhitespace": "trailing",
+
+  "editor.tabSize": 2,
+  "editor.wordWrap": "off",
+  // Sticky scroll
+  "editor.stickyScroll.enabled": true,
+  // Minimap
+  "editor.minimap.enabled": true,
+  "editor.minimap.autohide": true,
+
+
+
+  
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+
+}
