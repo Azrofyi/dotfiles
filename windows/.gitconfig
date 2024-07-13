@@ -1,13 +1,13 @@
 [user]
     ; Check
-    name = 
+    name =
     ; Check
-    email = 
+    email =
 [init]
     defaultBranch = main
 [core]
     ; Check
-    excludesFile = ~/.gitignore
+    excludesFile = C:\\Users\\USER_NAME\\.gitignore
 [pretty]
     pretty-history = format:%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset
 [alias]

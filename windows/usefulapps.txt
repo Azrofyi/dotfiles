@@ -1,0 +1,16 @@
+winscp
+WinMerge
+mediainfo
+Insomnia
+Obsidian
+Anki Flashcard
+Ventoy
+TrID
+fzf
+jq
+docker
+windows terminal
+pwsh
+
+###
+winget import -i .\winget.json --accept-package-agreements
