@@ -1,0 +1,115 @@
+{
+  // # STATIC
+  // ======================================
+  // ## Editor
+  "editor.cursorSmoothCaretAnimation": "on",
+  "editor.smoothScrolling": true,
+  "editor.copyWithSyntaxHighlighting": false,
+  "editor.emptySelectionClipboard": false,
+  "editor.snippetSuggestions": "top",
+  // ## Explorer
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+  // ## Workbench
+  "workbench.editor.highlightModifiedTabs": true,
+  "workbench.editor.tabActionLocation": "left",
+  // ## Window
+  "window.confirmBeforeClose": "keyboardOnly",
+  "window.newWindowDimensions": "inherit",
+  // ## Other
+  "diffEditor.ignoreTrimWhitespace": false,
+  "diffEditor.renderSideBySide": false,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  // ======================================
+
+  // # CUSTOMIZABLE
+  // ======================================
+  // ## Editor
+  // --------------------------------------
+  "workbench.colorTheme": "Solarized Dark",
+  "workbench.iconTheme": "vs-seti",
+
+  "editor.fontSize": 14,
+  "editor.fontFamily": "'FiraCode Nerd Font', Consolas, Monaco, 'Courier New', monospace",
+  "editor.fontLigatures": true,
+  "editor.tabSize": 2,
+  "editor.detectIndentation": false,
+  "editor.renderWhitespace": "trailing",
+  "editor.wordWrap": "off",
+
+  "editor.guides.bracketPairs": "active",
+
+  "editor.folding": true,
+  "editor.glyphMargin": false,
+  "editor.showFoldingControls": "always",
+  "editor.lineNumbers": "interval",
+
+  "editor.scrollbar.horizontal": "hidden",
+  "editor.scrollbar.vertical": "hidden",
+
+  // ### Cursor
+  "editor.cursorStyle": "line-thin",
+  "editor.cursorBlinking": "smooth",
+
+  // ### Minimap
+  "editor.minimap.enabled": true,
+  "editor.minimap.autohide": true,
+
+  // ### Tags Editing
+  "editor.linkedEditing": true,
+  "html.autoClosingTags": true,
+  "javascript.autoClosingTags": true,
+  "typescript.autoClosingTags": true,
+
+  // ### TEST
+  // "editor.inlineSuggest.enabled": true,
+  // "editor.suggestSelection": "first",
+  // "editor.stickyScroll.enabled": false,
+  // "editor.multiCursorModifier": "ctrlCmd",
+
+  // --------------------------------------
+
+  // ## Workbench / Window Bars
+  "window.density.editorTabHeight": "compact",
+  "workbench.editor.tabSizing": "fixed",
+  "workbench.editor.editorActionsLocation": "hidden",
+  "workbench.layoutControl.enabled": false,
+  "workbench.activityBar.location": "hidden",
+  "workbench.sideBar.location": "right",
+  "workbench.secondarySideBar.defaultVisibility": "hidden",
+  "chat.commandCenter.enabled": false,
+  "window.commandCenter": false,
+  "window.menuBarVisibility": "toggle",
+
+  "workbench.hover.delay": 100,
+  "workbench.editor.empty.hint": "hidden",
+  "workbench.startupEditor": "newUntitledFile",
+
+  // ## Breadcrumbs (!REVIEW)
+  "breadcrumbs.icons": false,
+  "breadcrumbs.symbolPath": "off",
+
+  // ## Terminal (!REVIEW)
+  "terminal.integrated.fontFamily": "",
+  "terminal.integrated.fontSize": 14,
+  "terminal.integrated.fontWeight": "300",
+  "terminal.integrated.cursorBlinking": true,
+  "terminal.integrated.cursorStyle": "line",
+  "terminal.integrated.persistentSessionReviveProcess": "never",
+  // "terminal.integrated.initialHint": false,
+
+  // ## Other
+  "[powershell]": {
+    "files.encoding": "utf8bom",
+    "files.autoGuessEncoding": true
+  },
+  // https://github.com/antfu/vscode-file-nesting-config
+
+  // ======================================
+
+  // # LIVE
+  // ======================================
+  "files.autoSave": "off"
+}

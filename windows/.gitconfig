@@ -1,0 +1,14 @@
+[user]
+    ; Check
+    name =
+    ; Check
+    email =
+[init]
+    defaultBranch = main
+[core]
+    ; Check
+    excludesFile = C:\\Users\\USER_NAME\\.gitignore
+[pretty]
+    pretty-history = format:%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset
+[alias]
+    ph = log --graph --pretty=pretty-history --abbrev-commit --date=relative

@@ -1,0 +1,28 @@
+##Name
+sudo scutil --set ComputerName ""
+sudo scutil --set HostName ""
+sudo scutil --set LocalHostName ""
+
+##Finder
+defaults write com.apple.finder DisableAllAnimations -bool true
+defaults write com.apple.Finder AppleShowAllFiles -bool true
+defaults write com.apple.finder FXDefaultSearchScope -string "SCcf"
+defaults write com.apple.finder FXEnableExtensionChangeWarning -bool false
+defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
+defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
+defaults write com.apple.finder ShowPathbar -bool true
+
+killall Finder;
+
+##Dock
+defaults write com.apple.dock autohide -bool true
+defaults write com.apple.dock expose-animation-duration -float 0.1
+
+defaults write -g ApplePressAndHoldEnabled -bool false
+
+defaults write NSGlobalDomain KeyRepeat -int 1
+defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
+defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+defaults write NSGlobalDomain NSWindowResizeTime 0.001
+
+defaults write com.apple.screencapture disable-shadow -bool true
