@@ -1,8 +1,8 @@
 [user]
     ; Check
-    name = 
+    name =
     ; Check
-    email = 
+    email =
 [init]
     defaultBranch = main
 [core]

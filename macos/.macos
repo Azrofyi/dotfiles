@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
 # Based off of https://mths.be/macos
+# Check Trackpad > Keyboard > Privacy & Security > Lock Screen (sysadminctl -screenLock) >
+# Sound > Notifications > Wallpaper > Spotlight > Displays (Advanced, Night Shift) >
+# Desktop & Dock > Menu Bar > Appearance > Accessibility > General > Network
 
-# Close any open System Preferences panes, to prevent them from overriding
-# settings we’re about to change
 osascript -e 'tell application "System Preferences" to quit'
 
 # Ask for the administrator password upfront
@@ -12,10 +13,8 @@ sudo -v
 # Keep-alive: update existing `sudo` time stamp until `.macos` has finished
 while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
-###############################################################################
-# General UI/UX                                                               #
-###############################################################################
-
+### General UI/UX
+### ======================================
 # Set computer name (as done via System Preferences → Sharing)
 #sudo scutil --set ComputerName "0x6D746873"
 #sudo scutil --set HostName "0x6D746873"
@@ -25,20 +24,6 @@ while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 # Disable the sound effects on boot
 sudo nvram SystemAudioVolume=" "
 
-# Reveal IP address, hostname, OS version, etc. when clicking the clock
-# in the login window
-sudo defaults write /Library/Preferences/com.apple.loginwindow AdminHostInfo HostName
-
-# Fast opening and closing windows and popovers
-defaults write -g NSAutomaticWindowAnimationsEnabled -bool false
-
-# Always show scrollbars
-defaults write NSGlobalDomain AppleShowScrollBars -string "Always"
-# Possible values: `WhenScrolling`, `Automatic` and `Always`
-
-# Increase window resize speed for Cocoa applications
-defaults write NSGlobalDomain NSWindowResizeTime -float 0.001
-
 # Expand save panel by default
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode2 -bool true
@@ -47,107 +32,183 @@ defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode2 -bool true
 defaults write NSGlobalDomain PMPrintingExpandedStateForPrint -bool true
 defaults write NSGlobalDomain PMPrintingExpandedStateForPrint2 -bool true
 
-# Disable automatic capitalization as it’s annoying when typing code
-defaults write NSGlobalDomain NSAutomaticCapitalizationEnabled -bool false
+# Adjust toolbar title rollover delay
+defaults write -g NSToolbarTitleViewRolloverDelay -float 0
+# Increase window resize speed for Cocoa applications
+defaults write -g NSWindowResizeTime -float 0.001
+# Prevent Photos from opening automatically when devices are plugged in
+defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true
+### ======================================
 
-# Disable smart dashes as they’re annoying when typing code
-defaults write NSGlobalDomain NSAutomaticDashSubstitutionEnabled -bool false
+### Power Management
+### ======================================
+# Sleep the display on -b battery, -c charger
+sudo pmset -b displaysleep 5
+sudo pmset -c displaysleep 10
 
-# Disable automatic period substitution as it’s annoying when typing code
-defaults write NSGlobalDomain NSAutomaticPeriodSubstitutionEnabled -bool false
+### ======================================
 
-# Disable smart quotes as they’re annoying when typing code
-defaults write NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled -bool false
+### Trackpad, mouse (!Check: Swipe Between Pages)
+### ======================================
+# Trackpad: enable tap to click for this user and for the login screen
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
+defaults -currentHost write -g com.apple.mouse.tapBehavior -int 1
+defaults write -g com.apple.mouse.tapBehavior -int 1
 
-# Disable auto-correct
-defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
+defaults write -g com.apple.trackpad.scaling 2
+defaults write -g com.apple.mouse.scaling 2
+defaults write com.apple.AppleMultitouchTrackpad "FirstClickThreshold" -int 2
 
-# show Library folder
-chflags nohidden ~/Library
+#.Force Click off, instead 3 fingers tap
+# --------------------------------------
+defaults write -g com.apple.trackpad.forceClick 0
+defaults write com.apple.AppleMultitouchTrackpad "ForceSuppressed" -int 1
+defaults write com.apple.AppleMultitouchTrackpad "TrackpadThreeFingerTapGesture" -int 2
+defaults -currentHost write -g com.apple.trackpad.threeFingerTapGesture -int 2
+# --------------------------------------
+# FullScreen 4 fingers swipe
+# --------------------------------------
+defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerHorizSwipeGesture -int 2
+defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 0
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 0
+defaults -currentHost write -g com.apple.trackpad.fourFingerHorizSwipeGesture -int 2
+defaults -currentHost write -g com.apple.trackpad.threeFingerHorizSwipeGesture -int 0
+# --------------------------------------
+# Mission Control 4 fingers swipe
+# --------------------------------------
+defaults write com.apple.dock showMissionControlGestureEnabled -bool true
+defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
+defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 0
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerVertSwipeGesture -int 0
+defaults -currentHost write -g com.apple.trackpad.fourFingerVertSwipeGesture -int 2
+defaults -currentHost write -g com.apple.trackpad.threeFingerVertSwipeGesture -int 0
+# --------------------------------------
+### ======================================
 
-# take screenshots as jpg (usually smaller size) and not png
-defaults write com.apple.screencapture type jpg
+### Keyboard (!TODO: quotes format replacement, shortcuts)
+### ======================================
+# Disable press-and-hold for keys in favor of key repeat
+defaults write -g ApplePressAndHoldEnabled -bool false
+# Set a blazingly fast keyboard repeat rate
+defaults write -g KeyRepeat -int 1
+defaults write -g InitialKeyRepeat -int 10
+# Disable auto-correct spelling
+defaults write -g NSAutomaticSpellingCorrectionEnabled -bool false
+# Disable automatic capitalization
+defaults write -g NSAutomaticCapitalizationEnabled -bool false
+# Disable period with double spaces
+defaults write -g NSAutomaticPeriodSubstitutionEnabled -bool false
+# Disable smart quotes and dashes
+defaults write -g NSAutomaticQuoteSubstitutionEnabled -bool false
+defaults write -g NSAutomaticDashSubstitutionEnabled -bool false
 
-# do not open previous previewed files (e.g. PDFs) when opening a new one
-defaults write com.apple.Preview ApplePersistenceIgnoreState YES
+### ======================================
+
+### Finder
+### ======================================
+# When performing a search, search the current folder by default
+defaults write com.apple.finder FXDefaultSearchScope -string "SCcf"
+# Use list view in all Finder windows by default
+defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
+# show hidden files by default
+defaults write com.apple.finder AppleShowAllFiles -bool true
+# show all filename extensions
+defaults write -g AppleShowAllExtensions -bool true
+# show path bar
+defaults write com.apple.finder ShowPathbar -bool true
+# Display full POSIX path as Finder window title
+defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
+# Keep folders on top when sorting by name
+defaults write com.apple.finder _FXSortFoldersFirst -bool true
+# Disable the warning when changing a file extension
+defaults write com.apple.finder FXEnableExtensionChangeWarning -bool false
 
 # Avoid creating .DS_Store files on network or USB volumes
 defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
 defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
+### ======================================
 
-###############################################################################
-# Mission Control                                                             #
-###############################################################################
+### Desktop & Dock
+### ======================================
+# Cleanup
+#defaults write com.apple.dock persistent-apps -array
 
+# Set the icon size of Dock items to 36 pixels
+defaults write com.apple.dock tilesize -int 48
+# Change minimize/maximize window effect
+defaults write com.apple.dock mineffect -string "scale"
+# Minimize windows into their application’s icon
+defaults write com.apple.dock minimize-to-application -bool true
+# Don’t show recent applications in Dock
+defaults write com.apple.dock show-recents -bool false
+# Make Dock icons of hidden applications translucent
+defaults write com.apple.dock showhidden -bool true
+
+# Don’t animate opening applications from the Dock (little jump)
+defaults write com.apple.dock launchanim -bool false
+# Speed up Mission Control animations
 defaults write com.apple.dock expose-animation-duration -float 0.1
-defaults write com.apple.dashboard mcx-disabled -bool true
 
+# Automatically hide and show the Dock
+defaults write com.apple.dock autohide -bool true
+# Remove the auto-hiding Dock delay
+defaults write com.apple.dock autohide-delay -float 0
+# Remove the animation when hiding/showing the Dock
+defaults write com.apple.dock autohide-time-modifier -float 0
+
+# Group windows by application
+defaults write com.apple.dock expose-group-apps -bool true
 # Don’t automatically rearrange Spaces based on most recent use
 defaults write com.apple.dock mru-spaces -bool false
 
-###############################################################################
-# Trackpad, mouse, keyboard, Bluetooth accessories, and input                 #
-###############################################################################
+# Bottom right corner
+defaults write com.apple.dock wvous-br-corner -int 1
+defaults write com.apple.dock wvous-br-modifier -int 0
 
-# Trackpad: enable tap to click for this user and for the login screen
-defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
-defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
-defaults write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
+# Recent apps in Stage Manager (?)
+defaults write com.apple.WindowManager AutoHide -bool true
+defaults write com.apple.WindowManager StandardHideWidgets -bool true
 
-# enable key repeating
-defaults write -g ApplePressAndHoldEnabled -bool false
-echo 'Fast key repeat. Requires restart.'
+### ======================================
 
-# fast repeat
-defaults write NSGlobalDomain KeyRepeat -int 1
+### Safari
+### ======================================
+# Privacy: don’t send search queries to Apple
+defaults write com.apple.Safari UniversalSearchEnabled -bool false
+defaults write com.apple.Safari SuppressSearchSuggestions -bool true
+# Enable “Do Not Track”
+defaults write com.apple.Safari SendDoNotTrackHTTPHeader -bool true
+# Show the full URL in the address bar (note: this still hides the scheme)
+defaults write com.apple.Safari ShowFullURLInSmartSearchField -bool true
+# Hide Safari’s bookmarks bar by default
+defaults write com.apple.Safari ShowFavoritesBar -bool false
+# Enable Safari’s debug menu
+defaults write com.apple.Safari IncludeInternalDebugMenu -bool true
+# Enable the Develop menu and the Web Inspector in Safari
+defaults write com.apple.Safari IncludeDevelopMenu -bool true
+defaults write com.apple.Safari WebKitDeveloperExtrasEnabledPreferenceKey -bool true
+defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2DeveloperExtrasEnabled -bool true
 
-###############################################################################
-# Finder                                                                      #
-###############################################################################
+### ======================================
 
-# show hidden files
-defaults write com.apple.finder AppleShowAllFiles YES
+### Terminal
+### ======================================
+# Only use UTF-8 in Terminal.app
+defaults write com.apple.terminal StringEncodings -array 4
+# Enable Secure Keyboard Entry in Terminal.app
+defaults write com.apple.terminal SecureKeyboardEntry -bool true
+# Disable the annoying line marks
+defaults write com.apple.Terminal ShowLineMarks -int 0
 
-# show path bar
-defaults write com.apple.finder ShowPathbar -bool true
+### ======================================
 
-# show status bar
-defaults write com.apple.finder ShowStatusBar -bool true
+### Activity Monitor
+### ======================================
+# Visualize Network usage in the Activity Monitor Dock icon
+defaults write com.apple.ActivityMonitor IconType -int 2
+# Show all processes in Activity Monitor
+defaults write com.apple.ActivityMonitor ShowCategory -int 100
 
-# Display full POSIX path as Finder window title
-defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
-
-# Keep folders on top when sorting by name
-defaults write com.apple.finder _FXSortFoldersFirst -bool true
-
-# Expand the following File Info panes:
-# “General”, “Open with”, and “Sharing & Permissions”
-defaults write com.apple.finder FXInfoPanesExpanded -dict \
-	General -bool true \
-	OpenWith -bool true \
-	Privileges -bool true
-
-###############################################################################
-# Kill affected applications                                                  #
-###############################################################################
-
-for app in "Activity Monitor" \
-	"Address Book" \
-	"Calendar" \
-	"cfprefsd" \
-	"Contacts" \
-	"Dock" \
-	"Finder" \
-	"Google Chrome Canary" \
-	"Google Chrome" \
-	"Messages" \
-	"Photos" \
-	"Safari" \
-	"SizeUp" \
-	"Spectacle" \
-	"SystemUIServer" \
-	"Terminal" \
-	"Transmission"; do
-	killall "${app}" &> /dev/null
-done
 echo "Done. Note that some of these changes require a logout/restart to take effect."
