@@ -21,9 +21,6 @@ while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 #sudo scutil --set LocalHostName "0x6D746873"
 #sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "0x6D746873"
 
-# Disable the sound effects on boot
-sudo nvram SystemAudioVolume=" "
-
 # Expand save panel by default
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode2 -bool true
@@ -51,7 +48,7 @@ sudo pmset -c displaysleep 10
 ### Trackpad, mouse (!Check: Swipe Between Pages)
 ### ======================================
 # Trackpad: enable tap to click for this user and for the login screen
-defaults write com.apple.driver.AppleMultitouchTrackpad Clicking -bool true
+defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
 defaults -currentHost write -g com.apple.mouse.tapBehavior -int 1
 defaults write -g com.apple.mouse.tapBehavior -int 1

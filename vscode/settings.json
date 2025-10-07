@@ -16,6 +16,9 @@
   // ## Window
   "window.confirmBeforeClose": "keyboardOnly",
   "window.newWindowDimensions": "inherit",
+  // ## Updates
+  "extensions.autoUpdate": false,
+  "update.enableWindowsBackgroundUpdates": false,
   // ## Other
   "diffEditor.ignoreTrimWhitespace": false,
   "diffEditor.renderSideBySide": false,
@@ -80,6 +83,7 @@
   "workbench.sideBar.location": "right",
   "workbench.secondarySideBar.defaultVisibility": "hidden",
   "chat.commandCenter.enabled": false,
+  "chat.disableAIFeatures": true,
   "window.commandCenter": false,
   "window.menuBarVisibility": "toggle",
 
@@ -105,6 +109,8 @@
     "files.encoding": "utf8bom",
     "files.autoGuessEncoding": true
   },
+  "css.format.spaceAroundSelectorSeparator": true,
+  "css.lint.zeroUnits": "warning",
   // https://github.com/antfu/vscode-file-nesting-config
 
   // ======================================
