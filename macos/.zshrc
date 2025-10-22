@@ -5,9 +5,9 @@ ZSH_THEME="robbyrussell"
 
 plugins=(
   git
-  zsh-autocomplete
-  zsh-autosuggestions
+  fzf-tab
   fast-syntax-highlighting
+  zsh-autosuggestions
 )
 
 if [ -s "$ZSH/oh-my-zsh.sh" ]; then

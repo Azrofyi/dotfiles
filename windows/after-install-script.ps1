@@ -19,6 +19,13 @@ if (-not (Test-Elevation)) {
   exit 1
 }
 
+function Write-Ok([string]$Text) {
+  Write-Host "$($PSStyle.Foreground.BrightGreen)[✓]$($PSStyle.Reset) $Text"
+}
+function Write-Skip([string]$Text) {
+  Write-Host "$($PSStyle.Foreground.BrightYellow)[↷]$($PSStyle.Reset) $Text"
+}
+
 function Invoke-Confirmed {
   param(
     [Parameter(Mandatory)]
@@ -58,7 +65,7 @@ function Set-TimeSettings {
   )
   Set-TimeZone -Name $Tz
   Start-Service w32time
-  w32tm /config /update /manualpeerlist:"$Peers" /syncfromflags:manual
+  w32tm /config /manualpeerlist:"$Peers" /syncfromflags:manual /update
   w32tm /resync
   Stop-Service w32time
 }
@@ -67,7 +74,7 @@ function Set-MouseSpeed {
   param([ValidateRange(1, 20)][int]$Speed)
   $path = 'HKCU:\Control Panel\Mouse'
   # Скорость под ~1200 DPI ≈ 6
-  Set-ItemProperty -Path $path -Name "MouseSensitivity" -Value $MouseSpeed
+  Set-ItemProperty -Path $path -Name "MouseSensitivity" -Value $Speed
 
   # Отключение ускорения
   Set-ItemProperty -Path $path -Name "MouseSpeed" -Value 0

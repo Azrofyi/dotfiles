@@ -57,7 +57,7 @@ defaults write -g com.apple.trackpad.scaling 2
 defaults write -g com.apple.mouse.scaling 2
 defaults write com.apple.AppleMultitouchTrackpad "FirstClickThreshold" -int 2
 
-#.Force Click off, instead 3 fingers tap
+# Force Click off, instead 3 fingers tap
 # --------------------------------------
 defaults write -g com.apple.trackpad.forceClick 0
 defaults write com.apple.AppleMultitouchTrackpad "ForceSuppressed" -int 1
@@ -87,6 +87,8 @@ defaults -currentHost write -g com.apple.trackpad.threeFingerVertSwipeGesture -i
 
 ### Keyboard (!TODO: quotes format replacement, shortcuts)
 ### ======================================
+# Enable keyboard in modal windows
+defaults write -g AppleKeyboardUIMode -int 3
 # Disable press-and-hold for keys in favor of key repeat
 defaults write -g ApplePressAndHoldEnabled -bool false
 # Set a blazingly fast keyboard repeat rate
@@ -122,6 +124,8 @@ defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
 defaults write com.apple.finder _FXSortFoldersFirst -bool true
 # Disable the warning when changing a file extension
 defaults write com.apple.finder FXEnableExtensionChangeWarning -bool false
+# Disable the warning before emptying the Trash
+defaults write com.apple.finder WarnOnEmptyTrash -bool false
 
 # Avoid creating .DS_Store files on network or USB volumes
 defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true

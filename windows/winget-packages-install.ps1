@@ -77,25 +77,33 @@ function Install-App {
 #region Run
 
 $results = @()
-$index = 0
+$ok = @()
+$bad = @()
 
 foreach ($app in $apps) {
-  $index++
   $res = Install-App -Id $app
-  $results += , $res
+  if ($res.Status -eq 'Installed') {
+    $ok += $res
+  } else {
+    $bad += $res
+  }
+  $results += $res
 }
 
 #endregion
 
 #region Summary
 
+$okCount = ($ok | Measure-Object).Count
+$badCount = ($bad | Measure-Object).Count
+
 Write-Host ""
 Write-Host "========== Итог ==========" -ForegroundColor White
-Write-Host ("Успешно: {0}" -f $ok.Count) -ForegroundColor Green
+Write-Host ("Успешно: {0}" -f $okCount) -ForegroundColor Green
 foreach ($i in $ok) { Write-Host ("  + {0}" -f $i.Id) -ForegroundColor DarkGreen }
 
-if ($bad.Count -gt 0) {
-  Write-Host ("Неудачно: {0}" -f $bad.Count) -ForegroundColor Red
+if ($badCount -gt 0) {
+  Write-Host ("Неудачно: {0}" -f $badCount) -ForegroundColor Red
   foreach ($f in $bad) { Write-Host ("  - {0} (код {1})" -f $f.Id, $f.ExitCode) -ForegroundColor DarkRed }
 }
 else {

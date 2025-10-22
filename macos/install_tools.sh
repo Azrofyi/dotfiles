@@ -68,7 +68,7 @@ install_zsh_plugins() {
 
   git clone https://github.com/zsh-users/zsh-autosuggestions "$custom_dir/zsh-autosuggestions" || true
   git clone https://github.com/zdharma-continuum/fast-syntax-highlighting.git "$custom_dir/fast-syntax-highlighting" || true
-  git clone --depth 1 https://github.com/marlonrichert/zsh-autocomplete.git "$custom_dir/zsh-autocomplete" || true
+  git clone https://github.com/Aloxaf/fzf-tab "$custom_dir/fzf-tab" || true
 
   echo -e "${GREEN}Zsh plugins installed.${RESET}"
 }
