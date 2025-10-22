@@ -39,7 +39,7 @@ install_rosetta() {
 install_omz() {
   if ! command -v omz >/dev/null 2>&1; then
     echo -e "${YELLOW}Installing Oh My Zsh...${RESET}"
-    /bin/sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    RUNZSH=no KEEP_ZSHRC=yes /bin/sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
   else
     echo -e "${GREEN}Oh My Zsh already installed.${RESET}"
   fi

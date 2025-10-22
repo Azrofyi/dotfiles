@@ -16,6 +16,12 @@ else
   echo "⚠️ Oh My Zsh not found at $ZSH"
 fi
 
+if (( $+commands[fzf] )); then
+  source <(fzf --zsh)
+else
+  echo "⚠️ fzf not found — skipping fzf key bindings"
+fi
+
 # Aliases for common dirs
 alias home="cd ~"
 alias ..="cd .."

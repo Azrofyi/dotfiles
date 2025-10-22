@@ -1,4 +1,5 @@
 # Basic
+brew "eza"
 brew "fzf"
 brew "bat"
 brew "duf"
