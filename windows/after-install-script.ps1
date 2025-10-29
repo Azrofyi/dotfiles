@@ -73,7 +73,7 @@ function Set-TimeSettings {
 function Set-MouseSpeed {
   param([ValidateRange(1, 20)][int]$Speed)
   $path = 'HKCU:\Control Panel\Mouse'
-  # Скорость под ~1200 DPI ≈ 6
+  # Скорость под ~1600 DPI ≈ 6
   Set-ItemProperty -Path $path -Name "MouseSensitivity" -Value $Speed
 
   # Отключение ускорения
