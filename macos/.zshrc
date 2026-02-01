@@ -5,15 +5,21 @@ ZSH_THEME="robbyrussell"
 
 plugins=(
   git
-  zsh-autocomplete
-  zsh-autosuggestions
+  fzf-tab
   fast-syntax-highlighting
+  zsh-autosuggestions
 )
 
 if [ -s "$ZSH/oh-my-zsh.sh" ]; then
   source "$ZSH/oh-my-zsh.sh"
 else
   echo "⚠️ Oh My Zsh not found at $ZSH"
+fi
+
+if (( $+commands[fzf] )); then
+  source <(fzf --zsh)
+else
+  echo "⚠️ fzf not found — skipping fzf key bindings"
 fi
 
 # Aliases for common dirs

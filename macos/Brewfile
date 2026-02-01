@@ -1,0 +1,43 @@
+# Basic
+brew "bash"
+brew "eza"
+brew "fzf"
+brew "bat"
+brew "duf"
+brew "dust"
+brew "procs"
+brew "bottom"
+brew "ripgrep"
+brew "jq"
+
+# Essentials
+brew "git"
+brew "neovim"
+brew "tmux"
+
+cask "librewolf"
+cask "brave-browser"
+cask "telegram"
+cask "visual-studio-code"
+cask "obsidian"
+cask "spotify"
+cask "vlc"
+
+# Restrictions Bypass
+brew "spoofdpi"
+
+# Development Containers
+brew "docker"
+brew "docker-compose"
+brew "lima"
+cask "container"
+cask "podman-desktop"
+
+# Fonts
+cask "font-fira-code-nerd-font"
+cask "font-hack-nerd-font"
+
+# OBS and stuff
+cask "obs"
+cask "distroav"
+cask "libndi"
