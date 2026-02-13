@@ -1,5 +1,6 @@
 # Basic
 brew "bash"
+brew "coreutils"
 brew "eza"
 brew "fzf"
 brew "bat"
@@ -14,6 +15,7 @@ brew "jq"
 brew "git"
 brew "neovim"
 brew "tmux"
+brew "rclone"
 
 cask "librewolf"
 cask "brave-browser"
@@ -22,9 +24,12 @@ cask "visual-studio-code"
 cask "obsidian"
 cask "spotify"
 cask "vlc"
+cask "keka"
 
 # Restrictions Bypass
 brew "spoofdpi"
+brew "wireguard-tools"
+# v2aryn git: https://github.com/2dust/v2rayN
 
 # Development Containers
 brew "docker"

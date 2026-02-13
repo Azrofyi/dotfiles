@@ -5,6 +5,8 @@
 # Sound > Notifications > Wallpaper > Spotlight > Displays (Advanced, Night Shift) >
 # Desktop & Dock > Menu Bar > Appearance > Accessibility > General > Network
 
+COMPUTER_NAME=""
+
 osascript -e 'tell application "System Preferences" to quit'
 
 # Ask for the administrator password upfront
@@ -16,10 +18,10 @@ while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 ### General UI/UX
 ### ======================================
 # Set computer name (as done via System Preferences → Sharing)
-#sudo scutil --set ComputerName "0x6D746873"
-#sudo scutil --set HostName "0x6D746873"
-#sudo scutil --set LocalHostName "0x6D746873"
-#sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "0x6D746873"
+#sudo scutil --set ComputerName "$COMPUTER_NAME"
+#sudo scutil --set HostName "$COMPUTER_NAME"
+#sudo scutil --set LocalHostName "$COMPUTER_NAME"
+#sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "$COMPUTER_NAME"
 
 # Expand save panel by default
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true
@@ -35,6 +37,8 @@ defaults write -g NSToolbarTitleViewRolloverDelay -float 0
 defaults write -g NSWindowResizeTime -float 0.001
 # Prevent Photos from opening automatically when devices are plugged in
 defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true
+# Show battery percentage in controlcenter
+defaults -currentHost write com.apple.controlcenter BatteryShowPercentage -bool true
 ### ======================================
 
 ### Power Management
@@ -137,7 +141,7 @@ defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
 # Cleanup
 #defaults write com.apple.dock persistent-apps -array
 
-# Set the icon size of Dock items to 36 pixels
+# Set the icon size of Dock items to <number> pixels
 defaults write com.apple.dock tilesize -int 48
 # Change minimize/maximize window effect
 defaults write com.apple.dock mineffect -string "scale"

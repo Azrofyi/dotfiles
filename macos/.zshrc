@@ -33,3 +33,11 @@ alias reload="source ~/.zshrc && echo 'Reloaded ~/.zshrc ✅'"
 alias c="clear"
 alias e="exit"
 alias x="exit"
+
+alias lsports="sudo lsof -iTCP -sTCP:LISTEN -n -P"
+
+# macOS DNS flush
+flush() {
+    sudo dscacheutil -flushcache
+    sudo killall -HUP mDNSResponder
+}

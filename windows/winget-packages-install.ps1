@@ -12,10 +12,11 @@ $apps = @(
   "M2Team.NanaZip"                    # NanaZip
   "FxSound.FxSound"                   # FxSound (Sound equalizer)
   "LibreWolf.LibreWolf"               # LibreWolf
-  # "Brave.Brave"                       # Brave
+  "Brave.Brave"                       # Brave
   "qBittorrent.qBittorrent"           # qBittorrent
   "Telegram.TelegramDesktop"          # Telegram
-  # "Discord.Discord"                   # Discord (Needed proxy)
+  # "Discord.Discord"                   # Discord (Need proxy)
+  "2dust.v2rayN"                      # v2rayN (xray, singbox proxy)
   "Spotify.Spotify"                   # Spotify
   "Obsidian.Obsidian"                 # Obsidian
   "OBSProject.OBSStudio"              # OBS Studio
