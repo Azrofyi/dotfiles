@@ -5,9 +5,22 @@
 # Sound > Notifications > Wallpaper > Spotlight > Displays (Advanced, Night Shift) >
 # Desktop & Dock > Menu Bar > Appearance > Accessibility > General > Network
 
-COMPUTER_NAME=""
+confirm() { # default: No
+  read -r -p "$1 [y/N]: " ans
+  case "${ans:-}" in
+    [Yy]) return 0 ;;
+    *)    return 1 ;;
+  esac
+}
 
-osascript -e 'tell application "System Preferences" to quit'
+ask() { # ask "Prompt" "default"
+  local prompt="$1" def="${2-}" v
+  read -r -p "$prompt${def:+ [$def]}: " v
+  printf '%s' "${v:-$def}"
+}
+
+osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1 || true
+osascript -e 'tell application "System Preferences" to quit' >/dev/null 2>&1 || true
 
 # Ask for the administrator password upfront
 sudo -v
@@ -18,10 +31,16 @@ while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 ### General UI/UX
 ### ======================================
 # Set computer name (as done via System Preferences → Sharing)
-#sudo scutil --set ComputerName "$COMPUTER_NAME"
-#sudo scutil --set HostName "$COMPUTER_NAME"
-#sudo scutil --set LocalHostName "$COMPUTER_NAME"
-#sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "$COMPUTER_NAME"
+if confirm "Set computer name?"; then
+  COMPUTER_NAME="$(ask "Computer name" "")"
+  if [[ -n "$COMPUTER_NAME" ]]; then
+    sudo scutil --set ComputerName "$COMPUTER_NAME"
+    sudo scutil --set HostName "$COMPUTER_NAME"
+    sudo scutil --set LocalHostName "$COMPUTER_NAME"
+    sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server \
+      NetBIOSName -string "$COMPUTER_NAME"
+  fi
+fi
 
 # Expand save panel by default
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true
@@ -41,6 +60,16 @@ defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true
 defaults -currentHost write com.apple.controlcenter BatteryShowPercentage -bool true
 ### ======================================
 
+### Testing
+### ======================================
+# Appearance Icons and Widget style
+defaults write -g AppleIconAppearanceTheme -string "RegularDark"
+# Disabling Handnoff
+defaults -currentHost write com.apple.coreservices.useractivityd ActivityAdvertisingAllowed -bool false
+defaults -currentHost write com.apple.coreservices.useractivityd ActivityReceivingAllowed -bool false
+
+### ======================================
+
 ### Power Management
 ### ======================================
 # Sleep the display on -b battery, -c charger
@@ -54,8 +83,11 @@ sudo pmset -c displaysleep 10
 # Trackpad: enable tap to click for this user and for the login screen
 defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
-defaults -currentHost write -g com.apple.mouse.tapBehavior -int 1
-defaults write -g com.apple.mouse.tapBehavior -int 1
+defaults -currentHost write -g com.apple.mouse.tapBehavior -int 2
+defaults write -g com.apple.mouse.tapBehavior -int 2
+
+defaults write com.apple.AppleMultitouchTrackpad Dragging -bool true
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Dragging -bool true
 
 defaults write -g com.apple.trackpad.scaling 2
 defaults write -g com.apple.mouse.scaling 2
@@ -63,9 +95,11 @@ defaults write com.apple.AppleMultitouchTrackpad "FirstClickThreshold" -int 2
 
 # Force Click off, instead 3 fingers tap
 # --------------------------------------
-defaults write -g com.apple.trackpad.forceClick 0
-defaults write com.apple.AppleMultitouchTrackpad "ForceSuppressed" -int 1
+defaults write -g com.apple.trackpad.forceClick -bool false # maybe outdated
+defaults write com.apple.AppleMultitouchTrackpad "ActuateDetents" -int 0
+defaults write com.apple.AppleMultitouchTrackpad "ForceSuppressed" -bool true
 defaults write com.apple.AppleMultitouchTrackpad "TrackpadThreeFingerTapGesture" -int 2
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad "TrackpadThreeFingerTapGesture" -int 2
 defaults -currentHost write -g com.apple.trackpad.threeFingerTapGesture -int 2
 # --------------------------------------
 # FullScreen 4 fingers swipe
@@ -107,6 +141,8 @@ defaults write -g NSAutomaticPeriodSubstitutionEnabled -bool false
 # Disable smart quotes and dashes
 defaults write -g NSAutomaticQuoteSubstitutionEnabled -bool false
 defaults write -g NSAutomaticDashSubstitutionEnabled -bool false
+# F1, F2 as standart function keys
+defaults write -g com.apple.keyboard.fnState -bool true
 
 ### ======================================
 
@@ -139,7 +175,9 @@ defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
 ### Desktop & Dock
 ### ======================================
 # Cleanup
-#defaults write com.apple.dock persistent-apps -array
+if confirm "Clear Dock pinned apps?"; then
+  defaults write com.apple.dock persistent-apps -array
+fi
 
 # Set the icon size of Dock items to <number> pixels
 defaults write com.apple.dock tilesize -int 48
@@ -176,12 +214,39 @@ defaults write com.apple.dock wvous-br-modifier -int 0
 # Recent apps in Stage Manager (?)
 defaults write com.apple.WindowManager AutoHide -bool true
 defaults write com.apple.WindowManager StandardHideWidgets -bool true
+defaults write com.apple.WindowManager StageManagerHideWidgets -bool true
+
+defaults write com.apple.chronod effectiveRemoteWidgetsEnabled -bool false
+defaults write com.apple.chronod remoteWidgetsEnabled -bool false
+
+### ======================================
+
+### Spotlight
+### ======================================
+# Restrict to appear in Spotlight
+defaults write com.apple.Spotlight EnabledPreferenceRules -array \
+    'Custom.relatedContents' \
+    'com.apple.AppStore' \
+    'com.apple.iBooksX' \
+    'com.apple.calculator' \
+    'com.apple.iCal' \
+    'com.apple.AddressBook' \
+    'com.apple.Dictionary' \
+    'com.apple.mail' \
+    'com.apple.Notes' \
+    'com.apple.Photos' \
+    'com.apple.podcasts' \
+    'com.apple.reminders' \
+    'com.apple.Safari' \
+    'com.apple.VoiceMemos'
+# Help Apple Improve Search 2-off / 1-on
+defaults write com.apple.assistant.support "Search Queries Data Sharing Status" -int 2
 
 ### ======================================
 
 ### Terminal
 ### ======================================
-# Only use UTF-8 in Terminal.app
+# Only use UTF-8 in Terminal.apps
 defaults write com.apple.terminal StringEncodings -array 4
 # Enable Secure Keyboard Entry in Terminal.app
 defaults write com.apple.terminal SecureKeyboardEntry -bool true
@@ -196,5 +261,8 @@ defaults write com.apple.Terminal ShowLineMarks -int 0
 defaults write com.apple.ActivityMonitor IconType -int 2
 # Show all processes in Activity Monitor
 defaults write com.apple.ActivityMonitor ShowCategory -int 100
+
+killall Dock >/dev/null 2>&1 || true
+killall Finder >/dev/null 2>&1 || true
 
 echo "Done. Note that some of these changes require a logout/restart to take effect."

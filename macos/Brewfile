@@ -25,17 +25,18 @@ cask "obsidian"
 cask "spotify"
 cask "vlc"
 cask "keka"
+cask "chatgpt"
 
 # Restrictions Bypass
 brew "spoofdpi"
 brew "wireguard-tools"
-# v2aryn git: https://github.com/2dust/v2rayN
+# v2rayN git: https://github.com/2dust/v2rayN
 
 # Development Containers
 brew "docker"
 brew "docker-compose"
 brew "lima"
-cask "container"
+brew "container"
 cask "podman-desktop"
 
 # Fonts
