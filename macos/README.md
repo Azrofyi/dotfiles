@@ -2,16 +2,17 @@
 DOH for macOS
 https://github.com/paulmillr/encrypted-dns
 
-diff.sh - скрипт для проверки defaults изменений
+diff.sh - script for checking defaults changes
 https://github.com/yannbertrand/macos-defaults/blob/main/diff.sh
 
 `brew bundle --verbose --file=./Brewfile`
-Отваливается при failed адресах, которые заблокированны, поэтому росле делаем
+
+If failed url, do with proxy variable
 `ALL_PROXY=socks://...: brew bundle --verbose --file=./Brewfile`
 
 "All Applications". In the "Menu Title" field type "Lock Screen" and press your shortcut
 
-В последних профилях была проблема на новой ОС
+Last profiles had issue on new macos, solution:
 `security cms -D -i dns-base.mobileconfig -o plain.mobileconfig`
 
 ```xml
