@@ -25,6 +25,7 @@
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
   "files.trimFinalNewlines": true,
+  "telemetry.feedback.enabled": false,
   // ======================================
 
   // # CUSTOMIZABLE
@@ -58,7 +59,7 @@
 
   // ### Minimap
   "editor.minimap.enabled": true,
-  "editor.minimap.autohide": true,
+  "editor.minimap.autohide": "mouseover",
 
   // ### Tags Editing
   "editor.linkedEditing": true,
@@ -96,8 +97,8 @@
   "breadcrumbs.symbolPath": "off",
 
   // ## Terminal (!REVIEW)
-  "terminal.integrated.fontFamily": "",
-  "terminal.integrated.fontSize": 14,
+  "terminal.integrated.fontFamily": "'Hack Nerd Font Mono'",
+  "terminal.integrated.fontSize": 16,
   "terminal.integrated.fontWeight": "300",
   "terminal.integrated.cursorBlinking": true,
   "terminal.integrated.cursorStyle": "line",
@@ -111,11 +112,12 @@
   },
   "css.format.spaceAroundSelectorSeparator": true,
   "css.lint.zeroUnits": "warning",
-  // https://github.com/antfu/vscode-file-nesting-config
 
   // ======================================
 
   // # LIVE
   // ======================================
-  "files.autoSave": "off"
+  "files.autoSave": "off",
+  "cSpell.language": "en,ru",
+  "remote.defaultExtensionsIfInstalledLocally": []
 }

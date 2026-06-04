@@ -6,22 +6,15 @@
     "DaltonMenezes.aura-theme",
     "vscode-icons-team.vscode-icons",
     "PKief.material-icon-theme",
+    "BeardedBear.beardedtheme",
 
-    "yoavbls.pretty-ts-errors",
-    "GitHub.copilot",
-    "dbaeumer.vscode-eslint",
+    "ms-vscode-remote.remote-containers",
+    "mechatroner.rainbow-csv",
     "esbenp.prettier-vscode",
     "streetsidesoftware.code-spell-checker",
     "streetsidesoftware.code-spell-checker-russian",
 
-    "ritwickdey.LiveServer",
-    "ms-vscode.live-server",
-    "alefragnani.Bookmarks",
-    "EditorConfig.EditorConfig",
-    "eamodio.gitlens",
-    "ms-azuretools.vscode-docker",
     "yzhang.markdown-all-in-one",
-    "humao.rest-client",
     "ms-vscode.PowerShell"
   ],
   "unwantedRecommendations": []
