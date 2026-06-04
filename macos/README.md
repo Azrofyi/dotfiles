@@ -24,3 +24,6 @@ Last profiles had issue on new macos, solution:
 xattr -dr com.apple.quarantine /Applications/LibreWolf.app
 xattr -dr com.apple.quarantine ~/Downloads/v2rayN
 ```
+
+Preventing sendenv
+`/etc/ssh/ssh_config.d/100-macos.conf`

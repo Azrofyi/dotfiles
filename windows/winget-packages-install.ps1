@@ -20,11 +20,16 @@ $apps = @(
   "Spotify.Spotify"                   # Spotify
   "Obsidian.Obsidian"                 # Obsidian
   "OBSProject.OBSStudio"              # OBS Studio
-  # "VideoLAN.VLC"                      # VLC
+  "VideoLAN.VLC"                      # VLC
   "Microsoft.VisualStudioCode"        # VS Code
   "Neovim.Neovim"                     # NeoVim
   "cURL.cURL"                         # CURL
   "Git.Git"                           # Git
+  "Docker.DockerDesktop"
+  "Gyan.FFmpeg"
+  "Audacity.Audacity"
+  "LocalSend.LocalSend"
+  # "DistroAV.DistroAV"               # OBS Plugin (Need proxy)
 )
 
 #endregion
