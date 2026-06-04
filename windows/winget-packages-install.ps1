@@ -1,119 +1,252 @@
 ﻿<#
 .SYNOPSIS
-    Установка выбранных приложений через winget
+  Установка приложений через winget.
+
 .DESCRIPTION
-    Раскомментируй нужные пакеты, остальные будут проигнорированы
+  Ставит основной список приложений напрямую.
+  Отдельный список приложений ставит через HTTP proxy.
+
+.EXAMPLE
+  .\winget-packages-install.ps1
+
+.EXAMPLE
+  .\winget-packages-install.ps1 -Proxy "http://127.0.0.1:10809"
+
+.EXAMPLE
+  .\winget-packages-install.ps1 -SkipProxyApps
 #>
 
-#region App List (раскомментируй нужное)
+[CmdletBinding()]
+param(
+  [string]$Proxy,
 
-$apps = @(
-  "JanDeDobbeleer.OhMyPosh"           # OhMyPosh
-  "M2Team.NanaZip"                    # NanaZip
-  "FxSound.FxSound"                   # FxSound (Sound equalizer)
-  "LibreWolf.LibreWolf"               # LibreWolf
-  "Brave.Brave"                       # Brave
-  "qBittorrent.qBittorrent"           # qBittorrent
-  "Telegram.TelegramDesktop"          # Telegram
-  # "Discord.Discord"                   # Discord (Need proxy)
-  "2dust.v2rayN"                      # v2rayN (xray, singbox proxy)
-  "Spotify.Spotify"                   # Spotify
-  "Obsidian.Obsidian"                 # Obsidian
-  "OBSProject.OBSStudio"              # OBS Studio
-  "VideoLAN.VLC"                      # VLC
-  "Microsoft.VisualStudioCode"        # VS Code
-  "Neovim.Neovim"                     # NeoVim
-  "cURL.cURL"                         # CURL
-  "Git.Git"                           # Git
-  "Docker.DockerDesktop"
-  "Gyan.FFmpeg"
-  "Audacity.Audacity"
-  "LocalSend.LocalSend"
-  # "DistroAV.DistroAV"               # OBS Plugin (Need proxy)
+  [switch]$SkipProxyApps,
+
+  [string]$Source = 'winget'
 )
 
-#endregion
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-  Write-Error "[X] Winget не найден!"
-  exit 1
+#region Package lists
+
+$Apps = @(
+  'JanDeDobbeleer.OhMyPosh'           # OhMyPosh
+  'M2Team.NanaZip'                    # NanaZip
+  'FxSound.FxSound'                   # FxSound
+  'LibreWolf.LibreWolf'               # LibreWolf
+  'Brave.Brave'                       # Brave
+  'qBittorrent.qBittorrent'           # qBittorrent
+  'Telegram.TelegramDesktop'          # Telegram
+  '2dust.v2rayN'                      # v2rayN
+  'Spotify.Spotify'                   # Spotify
+  'Obsidian.Obsidian'                 # Obsidian
+  'OBSProject.OBSStudio'              # OBS Studio
+  'VideoLAN.VLC'                      # VLC
+  'Microsoft.VisualStudioCode'        # VS Code
+  'Neovim.Neovim'                     # Neovim
+  'cURL.cURL'                         # curl
+  'Git.Git'                           # Git
+  'Docker.DockerDesktop'              # Docker Desktop
+  'Gyan.FFmpeg'                       # FFmpeg
+  'Audacity.Audacity'                 # Audacity
+  'LocalSend.LocalSend'               # LocalSend
+)
+
+$ProxyApps = @(
+  'Discord.Discord'                   # Discord
+  'DistroAV.DistroAV'                 # OBS plugin
+)
+
+#endregion Package lists
+
+#region Helpers
+
+function Write-Section {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [string]$Title
+  )
+
+  Write-Host ''
+  Write-Host "========== $Title ==========" -ForegroundColor White
 }
 
-#region Installation Script
-
-function Install-App {
-  <#
-    .SYNOPSIS
-        Ставит пакет по Id через winget и возвращает объект-результат.
-    .OUTPUTS
-        [pscustomobject] @{ Id; Status; ExitCode;}
-    #>
+function Test-Winget {
   [CmdletBinding()]
-  param (
-    [Parameter(Mandatory)]
-    [string]$Id
+  param()
+
+  return [bool](Get-Command winget -ErrorAction SilentlyContinue)
+}
+
+function Enable-WingetProxyOption {
+  [CmdletBinding()]
+  param()
+
+  try {
+    winget settings --enable ProxyCommandLineOptions | Out-Null
+    Write-Verbose 'Winget ProxyCommandLineOptions enabled.'
+  }
+  catch {
+    Write-Warning "Не удалось включить ProxyCommandLineOptions: $($_.Exception.Message)"
+  }
+}
+
+function Read-Proxy {
+  [CmdletBinding()]
+  param(
+    [string]$CurrentProxy
   )
-  $wingetArgs = @('install', '--id', $Id, '-e', '--accept-source-agreements', '--accept-package-agreements', '--source', 'winget')
 
-  Write-Host "[*] Установка: $Id" -ForegroundColor Cyan
+  if (-not [string]::IsNullOrWhiteSpace($CurrentProxy)) {
+    return $CurrentProxy
+  }
 
-  winget $wingetArgs
-  $code = $LASTEXITCODE
+  $inputProxy = Read-Host 'Введите HTTP proxy, например http://127.0.0.1:10809'
 
-  if ($code -eq 0) {
+  if ([string]::IsNullOrWhiteSpace($inputProxy)) {
+    return $null
+  }
+
+  return $inputProxy
+}
+
+function Install-WingetPackage {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [string]$Id,
+
+    [string]$Proxy,
+
+    [Parameter(Mandatory)]
+    [string]$Source
+  )
+
+  $wingetArgs = @(
+    'install'
+    '--id', $Id
+    '--exact'
+    '--accept-source-agreements'
+    '--accept-package-agreements'
+    '--disable-interactivity'
+    '--source', $Source
+  )
+
+  if (-not [string]::IsNullOrWhiteSpace($Proxy)) {
+    $wingetArgs += @('--proxy', $Proxy)
+    Write-Host "[*] Установка через proxy: $Id" -ForegroundColor Cyan
+  }
+  else {
+    Write-Host "[*] Установка: $Id" -ForegroundColor Cyan
+  }
+
+  winget @wingetArgs
+  $exitCode = $LASTEXITCODE
+
+  if ($exitCode -eq 0) {
     Write-Host "[OK] Установлено/актуально: $Id" -ForegroundColor Green
+
     return [pscustomobject]@{
       Id       = $Id
       Status   = 'Installed'
-      ExitCode = $code
+      ExitCode = $exitCode
+      Proxy    = if ([string]::IsNullOrWhiteSpace($Proxy)) { 'No' } else { 'Yes' }
     }
+  }
+
+  Write-Warning "[FAILED] $Id, code: $exitCode"
+
+  return [pscustomobject]@{
+    Id       = $Id
+    Status   = 'Failed'
+    ExitCode = $exitCode
+    Proxy    = if ([string]::IsNullOrWhiteSpace($Proxy)) { 'No' } else { 'Yes' }
+  }
+}
+
+function Install-WingetPackages {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [string[]]$Packages,
+
+    [string]$Proxy,
+
+    [Parameter(Mandatory)]
+    [string]$Source
+  )
+
+  if ($Packages.Count -eq 0) {
+    return @()
+  }
+
+  $results = foreach ($package in $Packages) {
+    Install-WingetPackage -Id $package -Proxy $Proxy -Source $Source
+  }
+
+  return @($results)
+}
+
+function Show-InstallSummary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [object[]]$Results
+  )
+
+  $installed = @($Results | Where-Object { $_.Status -eq 'Installed' })
+  $failed = @($Results | Where-Object { $_.Status -eq 'Failed' })
+
+  Write-Section -Title 'Итог'
+
+  Write-Host ("Успешно: {0}" -f $installed.Count) -ForegroundColor Green
+  foreach ($item in $installed) {
+    Write-Host ("  + {0} proxy={1}" -f $item.Id, $item.Proxy) -ForegroundColor DarkGreen
+  }
+
+  if ($failed.Count -gt 0) {
+    Write-Host ("Неудачно: {0}" -f $failed.Count) -ForegroundColor Red
+
+    foreach ($item in $failed) {
+      Write-Host ("  - {0} proxy={1} code={2}" -f $item.Id, $item.Proxy, $item.ExitCode) -ForegroundColor DarkRed
+    }
+
+    exit 1
+  }
+
+  Write-Host 'Сбоев нет.' -ForegroundColor Green
+}
+
+#endregion Helpers
+
+#region Main
+
+if (-not (Test-Winget)) {
+  Write-Error '[X] winget не найден.'
+  exit 1
+}
+
+$allResults = @()
+
+Write-Section -Title 'Основные приложения'
+$allResults += Install-WingetPackages -Packages $Apps -Source $Source
+
+if (-not $SkipProxyApps) {
+  Write-Section -Title 'Приложения через proxy'
+
+  $resolvedProxy = Read-Proxy -CurrentProxy $Proxy
+
+  if ([string]::IsNullOrWhiteSpace($resolvedProxy)) {
+    Write-Warning 'Proxy не указан. Proxy-приложения пропущены.'
   }
   else {
-    Write-Warning "[!] Ошибка установки $Id (код $code)"
-    return [pscustomobject]@{
-      Id       = $Id
-      Status   = 'Failed'
-      ExitCode = $code
-    }
+    Enable-WingetProxyOption
+    $allResults += Install-WingetPackages -Packages $ProxyApps -Proxy $resolvedProxy -Source $Source
   }
 }
 
-#endregion
+Show-InstallSummary -Results $allResults
 
-#region Run
-
-$results = @()
-$ok = @()
-$bad = @()
-
-foreach ($app in $apps) {
-  $res = Install-App -Id $app
-  if ($res.Status -eq 'Installed') {
-    $ok += $res
-  } else {
-    $bad += $res
-  }
-  $results += $res
-}
-
-#endregion
-
-#region Summary
-
-$okCount = ($ok | Measure-Object).Count
-$badCount = ($bad | Measure-Object).Count
-
-Write-Host ""
-Write-Host "========== Итог ==========" -ForegroundColor White
-Write-Host ("Успешно: {0}" -f $okCount) -ForegroundColor Green
-foreach ($i in $ok) { Write-Host ("  + {0}" -f $i.Id) -ForegroundColor DarkGreen }
-
-if ($badCount -gt 0) {
-  Write-Host ("Неудачно: {0}" -f $badCount) -ForegroundColor Red
-  foreach ($f in $bad) { Write-Host ("  - {0} (код {1})" -f $f.Id, $f.ExitCode) -ForegroundColor DarkRed }
-}
-else {
-  Write-Host "Сбоев нет." -ForegroundColor Green
-}
-
-#endregion
+#endregion Main

@@ -4,8 +4,15 @@
 [init]
     defaultBranch = main
 [core]
-    excludesFile = C:\\Users\\USER_NAME\\.gitignore_global
+    excludesFile = ~/.gitignore_global
+    autocrlf = input
+    editor = code --wait
 [pretty]
     pretty-history = format:%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset
 [alias]
     ph = log --graph --pretty=pretty-history --abbrev-commit --date=relative
+    st = status --short --branch
+    co = checkout
+    br = branch
+    ci = commit
+    lg = log --graph --oneline --decorate --all
