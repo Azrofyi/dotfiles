@@ -16,13 +16,8 @@ if ($script:IsInteractive) {
   }
 
   if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-    $themePath = $null
-
-    if (-not [string]::IsNullOrWhiteSpace($env:POSH_THEMES_PATH)) {
-      $themePath = Join-Path $env:POSH_THEMES_PATH 'dracula.omp.json'
-    }
-
-    if ($themePath -and (Test-Path $themePath)) {
+    $themePath = Join-Path $HOME 'Documents\PowerShell\dracula.omp.json'
+    if (Test-Path $themePath) {
       oh-my-posh init pwsh --config $themePath | Invoke-Expression
     }
   }
@@ -64,7 +59,7 @@ function Get-PathList {
   param()
 
   $env:Path -split [System.IO.Path]::PathSeparator |
-    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 }
 
 function Get-CommandPath {
@@ -75,7 +70,7 @@ function Get-CommandPath {
   )
 
   Get-Command -Name $Name -ErrorAction SilentlyContinue |
-    Select-Object -ExpandProperty Path -ErrorAction SilentlyContinue
+  Select-Object -ExpandProperty Path -ErrorAction SilentlyContinue
 }
 
 function Update-WingetPackages {
@@ -124,7 +119,7 @@ function Edit-Profile {
   notepad $PROFILE
 }
 
-function Reload-Profile {
+function Update-Profile {
   [CmdletBinding()]
   param()
 
@@ -148,11 +143,11 @@ function Get-LocalIP {
   param()
 
   Get-NetIPAddress -AddressFamily IPv4 |
-    Where-Object {
-      $_.IPAddress -notlike '127.*' -and
-      $_.IPAddress -notlike '169.254.*'
-    } |
-    Select-Object InterfaceAlias, IPAddress
+  Where-Object {
+    $_.IPAddress -notlike '127.*' -and
+    $_.IPAddress -notlike '169.254.*'
+  } |
+  Select-Object InterfaceAlias, IPAddress
 }
 
 function Test-Port {
@@ -177,7 +172,7 @@ Set-Alias -Name which     -Value Get-CommandPath
 Set-Alias -Name updateall -Value Update-WingetPackages
 Set-Alias -Name touch     -Value New-TouchFile
 Set-Alias -Name ep        -Value Edit-Profile
-Set-Alias -Name rp        -Value Reload-Profile
+Set-Alias -Name up        -Value Update-Profile
 Set-Alias -Name ll        -Value Get-ChildItem
 
 #endregion Aliases

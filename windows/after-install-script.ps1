@@ -147,7 +147,7 @@ function Set-WindowsTimeSettings {
   )
 
   Write-Step "Настройка часового пояса: $TimeZoneId"
-  Set-TimeZone -Name $TimeZoneId
+  Set-TimeZone -Id $TimeZoneId
   Write-Ok "Часовой пояс настроен"
 
   Write-Step 'Настройка Windows Time Service'
