@@ -1,18 +1,33 @@
-[user]
-    name =
-    email =
+[include]
+    path = ~/.gitconfig.local
+
 [init]
     defaultBranch = main
+
 [core]
     excludesFile = ~/.gitignore_global
-    autocrlf = input
+    autocrlf = false
     editor = code --wait
+
+[fetch]
+    prune = true
+
+[pull]
+    ff = only
+
+[push]
+    autoSetupRemote = true
+
 [pretty]
     pretty-history = format:%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset
+
 [alias]
-    ph = log --graph --pretty=pretty-history --abbrev-commit --date=relative
     st = status --short --branch
     co = checkout
+    sw = switch
+    rs = restore
     br = branch
     ci = commit
+
     lg = log --graph --oneline --decorate --all
+    ph = log --graph --pretty=pretty-history --abbrev-commit --date=relative
