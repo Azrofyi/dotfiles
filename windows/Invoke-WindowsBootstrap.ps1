@@ -8,12 +8,31 @@
 .DESCRIPTION
   Выполняет базовую настройку Windows:
     - часовой пояс и NTP;
-    - BIOS/RTC clock as UTC;
-    - настройки мыши и клавиатуры;
+    - интерпретацию BIOS/RTC clock как UTC;
+    - настройки мыши и клавиатуры текущего пользователя;
     - подготовку WinGet;
     - включение WinGet ProxyCommandLineOptions;
     - установку/обновление базовых WinGet-компонентов;
     - опциональное включение Hyper-V.
+
+.PARAMETER TimeZoneId
+  Идентификатор часового пояса Windows.
+
+.PARAMETER NtpPeers
+  Список NTP-серверов. Если у peer не указаны флаги w32time,
+  автоматически добавляется 0x8 (NTP client mode).
+
+.PARAMETER MouseSpeed
+  Скорость указателя мыши от 1 до 20.
+
+.PARAMETER EnableHyperV
+  Включить Hyper-V без интерактивного запроса.
+
+.PARAMETER SkipHyperV
+  Не включать Hyper-V и не показывать интерактивный запрос.
+
+.PARAMETER SkipWinget
+  Пропустить настройку WinGet и baseline-пакетов.
 
 .EXAMPLE
   .\Invoke-WindowsBootstrap.ps1
@@ -62,13 +81,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# В PowerShell 7+ самостоятельно обрабатываем exit codes native-команд.
+# В PowerShell 7+ native-команды могут автоматически подчиняться
+# $ErrorActionPreference. Exit codes здесь обрабатываются явно.
 # В Windows PowerShell 5.1 этой preference variable нет.
-if (
-  Get-Variable `
-    -Name PSNativeCommandUseErrorActionPreference `
-    -ErrorAction SilentlyContinue
-) {
+$getVariableParams = @{
+  Name        = 'PSNativeCommandUseErrorActionPreference'
+  ErrorAction = 'SilentlyContinue'
+}
+
+$nativePreferenceVariable = Get-Variable @getVariableParams
+
+if ($null -ne $nativePreferenceVariable) {
   $PSNativeCommandUseErrorActionPreference = $false
 }
 
@@ -83,6 +106,17 @@ $script:WingetAcceptedExitCodes = @(
   0
   $script:WingetExitCodes.UpdateNotApplicable
   $script:WingetExitCodes.AlreadyInstalled
+)
+
+$script:WingetBaselinePackages = @(
+  @{
+    Id     = 'Microsoft.WindowsTerminal'
+    Action = 'upgrade'
+  }
+  @{
+    Id     = 'Microsoft.PowerShell'
+    Action = 'install'
+  }
 )
 
 #endregion Constants
@@ -135,6 +169,7 @@ function Write-Notice {
 
 function Format-ExitCode {
   [CmdletBinding()]
+  [OutputType([string])]
   param(
     [Parameter(Mandatory)]
     [int]$ExitCode
@@ -166,37 +201,32 @@ function Invoke-NativeCommand {
     [switch]$Quiet
   )
 
-  Write-Verbose (
-    'Executing: {0} {1}' -f (
-      $FilePath,
-      ($Arguments -join ' ')
-    )
-  )
+  Write-Verbose "Executing: $FilePath $($Arguments -join ' ')"
 
   if ($Quiet) {
     & $FilePath @Arguments | Out-Null
   }
   else {
-    # Native stdout не должен попасть в output этой функции.
+    # Native stdout не должен становиться output этой функции.
     & $FilePath @Arguments | Out-Host
   }
 
   $exitCode = $LASTEXITCODE
 
-  if ($exitCode -notin $SuccessExitCodes) {
-    $formattedCode = Format-ExitCode -ExitCode $exitCode
-
-    throw (
-      '{0} завершился с кодом {1} ({2}). Arguments: {3}' -f (
-        $FilePath,
-        $formattedCode,
-        $exitCode,
-        ($Arguments -join ' ')
-      )
-    )
+  if ($exitCode -in $SuccessExitCodes) {
+    return $exitCode
   }
 
-  return $exitCode
+  $formattedCode = Format-ExitCode -ExitCode $exitCode
+
+  throw (
+    '{0} завершился с кодом {1} ({2}). Arguments: {3}' -f (
+      $FilePath,
+      $formattedCode,
+      $exitCode,
+      ($Arguments -join ' ')
+    )
+  )
 }
 
 function Confirm-Choice {
@@ -238,89 +268,7 @@ function Confirm-Choice {
 
 #endregion Helpers
 
-#region Windows Settings
-
-function Set-WindowsTimeSettings {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]
-    [string]$TimeZoneId,
-
-    [Parameter(Mandatory)]
-    [string[]]$NtpPeers
-  )
-
-  Write-Step "Настройка часового пояса: $TimeZoneId"
-
-  Set-TimeZone -Id $TimeZoneId
-
-  Write-Ok 'Часовой пояс настроен'
-
-  Write-Step 'Настройка Windows Time Service'
-
-  Set-Service -Name w32time -StartupType Automatic
-  Start-Service -Name w32time
-
-  $configuredPeers = @(
-    foreach ($peer in $NtpPeers) {
-      $peer = $peer.Trim()
-
-      if ([string]::IsNullOrWhiteSpace($peer)) {
-        continue
-      }
-
-      # Если флаги уже указаны пользователем, оставляем как есть.
-      if ($peer -match ',0x[0-9A-Fa-f]+$') {
-        $peer
-      }
-      else {
-        # 0x8 = NTP client mode.
-        "$peer,0x8"
-      }
-    }
-  )
-
-  if ($configuredPeers.Count -eq 0) {
-    throw 'Список NTP-серверов пуст.'
-  }
-
-  $peerList = $configuredPeers -join ' '
-  $w32tmPath = Join-Path $env:SystemRoot 'System32\w32tm.exe'
-
-  Invoke-NativeCommand `
-    -FilePath $w32tmPath `
-    -Arguments @(
-    '/config'
-    "/manualpeerlist:$peerList"
-    '/syncfromflags:manual'
-    '/update'
-  ) `
-    -Quiet |
-  Out-Null
-
-  Restart-Service -Name w32time
-
-  Write-Ok "NTP настроен: $($configuredPeers -join ', ')"
-
-  try {
-    Invoke-NativeCommand `
-      -FilePath $w32tmPath `
-      -Arguments @('/resync') `
-      -Quiet |
-    Out-Null
-
-    Write-Ok 'Время синхронизировано'
-  }
-  catch {
-    # Конфигурация NTP уже применена.
-    # Отсутствие сети или временная недоступность peer не должны
-    # считать весь bootstrap неуспешным.
-    Write-Notice (
-      'NTP настроен, но немедленная синхронизация не удалась: ' +
-      $_.Exception.Message
-    )
-  }
-}
+#region User Settings
 
 function Set-WindowsMouseSettings {
   [CmdletBinding()]
@@ -333,25 +281,10 @@ function Set-WindowsMouseSettings {
 
   $path = 'HKCU:\Control Panel\Mouse'
 
-  Set-ItemProperty `
-    -Path $path `
-    -Name 'MouseSensitivity' `
-    -Value ([string]$Speed)
-
-  Set-ItemProperty `
-    -Path $path `
-    -Name 'MouseSpeed' `
-    -Value '0'
-
-  Set-ItemProperty `
-    -Path $path `
-    -Name 'MouseThreshold1' `
-    -Value '0'
-
-  Set-ItemProperty `
-    -Path $path `
-    -Name 'MouseThreshold2' `
-    -Value '0'
+  Set-ItemProperty -Path $path -Name 'MouseSensitivity' -Value ([string]$Speed)
+  Set-ItemProperty -Path $path -Name 'MouseSpeed' -Value '0'
+  Set-ItemProperty -Path $path -Name 'MouseThreshold1' -Value '0'
+  Set-ItemProperty -Path $path -Name 'MouseThreshold2' -Value '0'
 
   Write-Ok 'Настройки мыши применены'
 }
@@ -362,19 +295,20 @@ function Set-WindowsKeyboardSettings {
 
   Write-Step 'Настройка клавиатуры'
 
-  Set-ItemProperty `
-    -Path 'HKCU:\Control Panel\Keyboard' `
-    -Name 'KeyboardDelay' `
-    -Value '0'
+  Set-ItemProperty -Path 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardDelay' -Value '0'
 
   Write-Ok 'Настройки клавиатуры применены'
 }
 
-function Set-WindowsBiosUtc {
+#endregion User Settings
+
+#region System Settings
+
+function Set-WindowsRtcAsUtc {
   [CmdletBinding()]
   param()
 
-  Write-Step 'Настройка BIOS/RTC clock as UTC'
+  Write-Step 'Настройка RTC clock as UTC'
 
   $propertyParams = @{
     Path         = 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation'
@@ -386,8 +320,98 @@ function Set-WindowsBiosUtc {
 
   New-ItemProperty @propertyParams | Out-Null
 
-  Write-Ok 'RealTimeIsUniversal=1 применён'
+  Write-Ok 'Windows настроена на использование RTC в UTC'
 }
+
+function Set-WindowsTimeSettings {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [string]$TimeZoneId,
+
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [string[]]$NtpPeers
+  )
+
+  Write-Step "Настройка часового пояса: $TimeZoneId"
+
+  Set-TimeZone -Id $TimeZoneId
+
+  Write-Ok 'Часовой пояс настроен'
+  Write-Step 'Настройка Windows Time Service'
+
+  Set-Service -Name 'w32time' -StartupType Automatic
+  Start-Service -Name 'w32time'
+
+  $configuredPeers = @(
+    foreach ($peer in $NtpPeers) {
+      $peer = $peer.Trim()
+
+      if ([string]::IsNullOrWhiteSpace($peer)) {
+        continue
+      }
+
+      # Если флаги уже указаны пользователем, оставляем peer как есть.
+      if ($peer -match ',0x[0-9A-Fa-f]+$') {
+        $peer
+        continue
+      }
+
+      # 0x8 = NTP client mode.
+      "$peer,0x8"
+    }
+  )
+
+  if ($configuredPeers.Count -eq 0) {
+    throw 'Список NTP-серверов пуст.'
+  }
+
+  $peerList = $configuredPeers -join ' '
+  $w32tmPath = Join-Path $env:SystemRoot 'System32\w32tm.exe'
+
+  $configParams = @{
+    FilePath  = $w32tmPath
+    Arguments = @(
+      '/config'
+      "/manualpeerlist:$peerList"
+      '/syncfromflags:manual'
+      '/update'
+    )
+    Quiet     = $true
+  }
+
+  Invoke-NativeCommand @configParams | Out-Null
+
+  Restart-Service -Name 'w32time'
+
+  Write-Ok "NTP настроен: $($configuredPeers -join ', ')"
+
+  try {
+    $resyncParams = @{
+      FilePath  = $w32tmPath
+      Arguments = @('/resync')
+      Quiet     = $true
+    }
+
+    Invoke-NativeCommand @resyncParams | Out-Null
+
+    Write-Ok 'Время синхронизировано'
+  }
+  catch {
+    # Конфигурация NTP уже применена. Отсутствие сети или временная
+    # недоступность peer не должны считать весь bootstrap неуспешным.
+    Write-Notice (
+      'NTP настроен, но немедленная синхронизация не удалась: ' +
+      $_.Exception.Message
+    )
+  }
+}
+
+#endregion System Settings
+
+#region Windows Features
 
 function Enable-WindowsHyperV {
   [CmdletBinding()]
@@ -395,55 +419,50 @@ function Enable-WindowsHyperV {
 
   Write-Step 'Проверка Hyper-V'
 
-  try {
-    $feature = Get-WindowsOptionalFeature `
-      -Online `
-      -FeatureName 'Microsoft-Hyper-V' `
-      -ErrorAction Stop
-
-    if ($feature.State -eq 'Enabled') {
-      Write-Ok 'Hyper-V уже включён'
-      return
-    }
-
-    if ($feature.State -eq 'EnablePending') {
-      Write-Notice (
-        'Hyper-V уже ожидает завершения установки. ' +
-        'Требуется перезагрузка.'
-      )
-      return
-    }
-
-    Write-Step 'Включение Hyper-V'
-
-    $featureParams = @{
-      Online      = $true
-      FeatureName = 'Microsoft-Hyper-V'
-      All         = $true
-      NoRestart   = $true
-      ErrorAction = 'Stop'
-    }
-
-    $result = Enable-WindowsOptionalFeature @featureParams
-
-    if ($result.RestartNeeded) {
-      Write-Notice (
-        'Hyper-V включён. Для завершения установки требуется перезагрузка.'
-      )
-    }
-    else {
-      Write-Ok 'Hyper-V включён'
-    }
+  $getFeatureParams = @{
+    Online      = $true
+    FeatureName = 'Microsoft-Hyper-V'
+    ErrorAction = 'Stop'
   }
-  catch {
-    Write-Warning (
-      'Не удалось включить Hyper-V: ' +
-      $_.Exception.Message
+
+  $feature = Get-WindowsOptionalFeature @getFeatureParams
+
+  if ($feature.State -eq 'Enabled') {
+    Write-Ok 'Hyper-V уже включён'
+    return
+  }
+
+  if ($feature.State -eq 'EnablePending') {
+    Write-Notice (
+      'Hyper-V уже ожидает завершения установки. ' +
+      'Требуется перезагрузка.'
     )
+    return
   }
+
+  Write-Step 'Включение Hyper-V'
+
+  $enableFeatureParams = @{
+    Online      = $true
+    FeatureName = 'Microsoft-Hyper-V'
+    All         = $true
+    NoRestart   = $true
+    ErrorAction = 'Stop'
+  }
+
+  $result = Enable-WindowsOptionalFeature @enableFeatureParams
+
+  if ($result.RestartNeeded) {
+    Write-Notice (
+      'Hyper-V включён. Для завершения установки требуется перезагрузка.'
+    )
+    return
+  }
+
+  Write-Ok 'Hyper-V включён'
 }
 
-#endregion Windows Settings
+#endregion Windows Features
 
 #region WinGet
 
@@ -481,20 +500,13 @@ function Invoke-WingetPackageAction {
     '--accept-package-agreements'
   )
 
-  try {
-    $exitCode = Invoke-NativeCommand `
-      -FilePath $WingetPath `
-      -Arguments $arguments `
-      -SuccessExitCodes $script:WingetAcceptedExitCodes
+  $commandParams = @{
+    FilePath         = $WingetPath
+    Arguments        = $arguments
+    SuccessExitCodes = $script:WingetAcceptedExitCodes
   }
-  catch {
-    Write-Warning (
-      "Не удалось выполнить winget $Action для ${Id}: " +
-      $_.Exception.Message
-    )
 
-    return
-  }
+  $exitCode = Invoke-NativeCommand @commandParams
 
   if ($exitCode -eq 0) {
     Write-Ok "$Id обработан"
@@ -510,6 +522,12 @@ function Invoke-WingetPackageAction {
     Write-Skip "$Id уже установлен"
     return
   }
+
+  # Недостижимо при корректном WingetAcceptedExitCodes, но оставлено
+  # как защита на случай расширения списка допустимых кодов.
+  Write-Notice (
+    "$Id завершён с допустимым кодом $(Format-ExitCode -ExitCode $exitCode)"
+  )
 }
 
 function Enable-WingetProxyOption {
@@ -522,28 +540,33 @@ function Enable-WingetProxyOption {
 
   Write-Step 'Включение WinGet ProxyCommandLineOptions'
 
-  Invoke-NativeCommand `
-    -FilePath $WingetPath `
-    -Arguments @(
-    'settings'
-    '--enable'
-    'ProxyCommandLineOptions'
-    '--disable-interactivity'
-  ) `
-    -Quiet |
-  Out-Null
+  $commandParams = @{
+    FilePath  = $WingetPath
+    Arguments = @(
+      'settings'
+      '--enable'
+      'ProxyCommandLineOptions'
+      '--disable-interactivity'
+    )
+    Quiet     = $true
+  }
+
+  Invoke-NativeCommand @commandParams | Out-Null
 
   Write-Ok 'WinGet ProxyCommandLineOptions включён'
 }
 
-function Invoke-WingetPreset {
+function Initialize-WinGet {
   [CmdletBinding()]
   param()
 
-  $wingetCommand = Get-Command `
-    -Name 'winget.exe' `
-    -CommandType Application `
-    -ErrorAction SilentlyContinue
+  $getCommandParams = @{
+    Name        = 'winget.exe'
+    CommandType = 'Application'
+    ErrorAction = 'SilentlyContinue'
+  }
+
+  $wingetCommand = Get-Command @getCommandParams
 
   if ($null -eq $wingetCommand) {
     throw (
@@ -556,24 +579,27 @@ function Invoke-WingetPreset {
 
   Write-Verbose "WinGet path: $wingetPath"
 
-  # App Installer содержит сам WinGet client.
-  Invoke-WingetPackageAction `
-    -WingetPath $wingetPath `
-    -Action upgrade `
-    -Id 'Microsoft.AppInstaller'
+  # App Installer содержит сам WinGet client и обновляется первым.
+  $appInstallerParams = @{
+    WingetPath = $wingetPath
+    Action     = 'upgrade'
+    Id         = 'Microsoft.AppInstaller'
+  }
+
+  Invoke-WingetPackageAction @appInstallerParams
 
   # Системная prerequisite-настройка для Install-WingetPackages.ps1.
   Enable-WingetProxyOption -WingetPath $wingetPath
 
-  Invoke-WingetPackageAction `
-    -WingetPath $wingetPath `
-    -Action upgrade `
-    -Id 'Microsoft.WindowsTerminal'
+  foreach ($package in $script:WingetBaselinePackages) {
+    $packageParams = @{
+      WingetPath = $wingetPath
+      Action     = $package.Action
+      Id         = $package.Id
+    }
 
-  Invoke-WingetPackageAction `
-    -WingetPath $wingetPath `
-    -Action install `
-    -Id 'Microsoft.PowerShell'
+    Invoke-WingetPackageAction @packageParams
+  }
 }
 
 #endregion WinGet
@@ -587,54 +613,47 @@ if ($EnableHyperV -and $SkipHyperV) {
   )
 }
 
-if (
-  $PSCmdlet.ShouldProcess(
+if ($PSCmdlet.ShouldProcess(
     'Current user mouse settings',
     "Set mouse speed to $MouseSpeed and disable acceleration"
-  )
-) {
+  )) {
   Set-WindowsMouseSettings -Speed $MouseSpeed
 }
 
-if (
-  $PSCmdlet.ShouldProcess(
+if ($PSCmdlet.ShouldProcess(
     'Current user keyboard settings',
     'Set keyboard delay'
-  )
-) {
+  )) {
   Set-WindowsKeyboardSettings
 }
 
-if (
-  $PSCmdlet.ShouldProcess(
+if ($PSCmdlet.ShouldProcess(
     'Windows RTC configuration',
     'Configure hardware clock as UTC'
-  )
-) {
-  Set-WindowsBiosUtc
+  )) {
+  Set-WindowsRtcAsUtc
 }
 
-if (
-  $PSCmdlet.ShouldProcess(
+if ($PSCmdlet.ShouldProcess(
     'Windows Time Service',
     "Configure timezone '$TimeZoneId' and NTP"
-  )
-) {
-  Set-WindowsTimeSettings `
-    -TimeZoneId $TimeZoneId `
-    -NtpPeers $NtpPeers
+  )) {
+  $timeParams = @{
+    TimeZoneId = $TimeZoneId
+    NtpPeers   = $NtpPeers
+  }
+
+  Set-WindowsTimeSettings @timeParams
 }
 
 if ($SkipWinget) {
   Write-Skip 'WinGet bootstrap пропущен'
 }
-elseif (
-  $PSCmdlet.ShouldProcess(
+elseif ($PSCmdlet.ShouldProcess(
     'WinGet',
     'Configure WinGet and baseline packages'
-  )
-) {
-  Invoke-WingetPreset
+  )) {
+  Initialize-WinGet
 }
 
 $shouldEnableHyperV = $false
@@ -652,9 +671,12 @@ elseif ($WhatIfPreference) {
   )
 }
 else {
-  $shouldEnableHyperV = Confirm-Choice `
-    -Title 'Hyper-V' `
-    -Message 'Включить Hyper-V?'
+  $choiceParams = @{
+    Title   = 'Hyper-V'
+    Message = 'Включить Hyper-V?'
+  }
+
+  $shouldEnableHyperV = Confirm-Choice @choiceParams
 }
 
 if (

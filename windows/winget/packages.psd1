@@ -7,19 +7,19 @@
   Groups   = @(
     @{
       Name            = 'Core'
-      Title           = 'Основные приложения'
+      Title           = 'Core applications'
       DefaultSelected = $true
     }
 
     @{
       Name            = 'Optional'
-      Title           = 'Дополнительные приложения'
+      Title           = 'Optional applications'
       DefaultSelected = $false
     }
 
     @{
       Name            = 'Trial'
-      Title           = 'Новые / тестируемые приложения'
+      Title           = 'New / trial applications'
       DefaultSelected = $false
     }
   )
