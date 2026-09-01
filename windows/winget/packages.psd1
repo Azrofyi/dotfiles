@@ -1,188 +1,194 @@
 ﻿@{
+  <#
+  Packages are defined in Catalog and referenced by logical key in Profiles.
+
+  To add a package:
+    1. Add a unique entry to Catalog with the required Id.
+    2. Add its logical key to one or more Profiles.
+
+  Optional package fields:
+    Name           - display name;
+    Source         - overrides Defaults.Source;
+    Network        - Default or Proxy;
+    AdditionalArgs - extra winget arguments as separate array elements.
+
+  Example:
+    AdditionalArgs = @('--scope', 'user')
+
+  Do not use managed arguments in AdditionalArgs:
+    --id, --source, --exact, --proxy, --no-proxy, --silent.
+
+  The proxy address is not stored here. Pass it with -Proxy.
+  Profile entries define installation order and must reference Catalog keys.
+  Do not rename Defaults, Catalog, Profiles, or their existing properties.
+  #>
   Defaults = @{
     Source  = 'winget'
-    Network = 'Direct'
+    # Default: do not pass --proxy or --no-proxy; use normal WinGet behavior.
+    Network = 'Default'
   }
 
-  Groups   = @(
-    @{
-      Name            = 'Core'
-      Title           = 'Core applications'
-      DefaultSelected = $true
+  # Catalog contains only package identity and installation metadata.
+  # Profiles below describe which packages belong to an installation set.
+  Catalog  = @{
+    OhMyPosh           = @{
+      Id   = 'JanDeDobbeleer.OhMyPosh'
+      Name = 'Oh My Posh'
     }
 
-    @{
-      Name            = 'Optional'
-      Title           = 'Optional applications'
-      DefaultSelected = $false
+    NanaZip            = @{
+      Id   = 'M2Team.NanaZip'
+      Name = 'NanaZip'
     }
 
-    @{
-      Name            = 'Trial'
-      Title           = 'New / trial applications'
-      DefaultSelected = $false
-    }
-  )
-
-  Packages = @(
-    # ---------------------------------------------------------------------
-    # Core
-    # ---------------------------------------------------------------------
-
-    @{
-      Id    = 'JanDeDobbeleer.OhMyPosh'
-      Name  = 'Oh My Posh'
-      Group = 'Core'
+    FxSound            = @{
+      Id   = 'FxSound.FxSound'
+      Name = 'FxSound'
     }
 
-    @{
-      Id    = 'M2Team.NanaZip'
-      Name  = 'NanaZip'
-      Group = 'Core'
+    LibreWolf          = @{
+      Id   = 'LibreWolf.LibreWolf'
+      Name = 'LibreWolf'
     }
 
-    @{
-      Id    = 'FxSound.FxSound'
-      Name  = 'FxSound'
-      Group = 'Core'
+    Brave              = @{
+      Id   = 'Brave.Brave'
+      Name = 'Brave'
     }
 
-    @{
-      Id    = 'LibreWolf.LibreWolf'
-      Name  = 'LibreWolf'
-      Group = 'Core'
+    QBittorrent        = @{
+      Id   = 'qBittorrent.qBittorrent'
+      Name = 'qBittorrent'
     }
 
-    @{
-      Id    = 'Brave.Brave'
-      Name  = 'Brave'
-      Group = 'Core'
+    Telegram           = @{
+      Id   = 'Telegram.TelegramDesktop'
+      Name = 'Telegram'
     }
 
-    @{
-      Id    = 'qBittorrent.qBittorrent'
-      Name  = 'qBittorrent'
-      Group = 'Core'
+    V2RayN             = @{
+      Id   = '2dust.v2rayN'
+      Name = 'v2rayN'
     }
 
-    @{
-      Id    = 'Telegram.TelegramDesktop'
-      Name  = 'Telegram'
-      Group = 'Core'
+    Spotify            = @{
+      Id   = 'Spotify.Spotify'
+      Name = 'Spotify'
     }
 
-    @{
-      Id    = '2dust.v2rayN'
-      Name  = 'v2rayN'
-      Group = 'Core'
+    Obsidian           = @{
+      Id   = 'Obsidian.Obsidian'
+      Name = 'Obsidian'
     }
 
-    @{
-      Id    = 'Spotify.Spotify'
-      Name  = 'Spotify'
-      Group = 'Core'
+    OBSStudio          = @{
+      Id   = 'OBSProject.OBSStudio'
+      Name = 'OBS Studio'
     }
 
-    @{
-      Id    = 'Obsidian.Obsidian'
-      Name  = 'Obsidian'
-      Group = 'Core'
+    VLC                = @{
+      Id   = 'VideoLAN.VLC'
+      Name = 'VLC'
     }
 
-    @{
-      Id    = 'OBSProject.OBSStudio'
-      Name  = 'OBS Studio'
-      Group = 'Core'
+    VSCode             = @{
+      Id   = 'Microsoft.VisualStudioCode'
+      Name = 'Visual Studio Code'
     }
 
-    @{
-      Id    = 'VideoLAN.VLC'
-      Name  = 'VLC'
-      Group = 'Core'
+    Neovim             = @{
+      Id   = 'Neovim.Neovim'
+      Name = 'Neovim'
     }
 
-    @{
-      Id    = 'Microsoft.VisualStudioCode'
-      Name  = 'Visual Studio Code'
-      Group = 'Core'
+    Curl               = @{
+      Id   = 'cURL.cURL'
+      Name = 'curl'
     }
 
-    @{
-      Id    = 'Neovim.Neovim'
-      Name  = 'Neovim'
-      Group = 'Core'
+    Git                = @{
+      Id   = 'Git.Git'
+      Name = 'Git'
     }
 
-    @{
-      Id    = 'cURL.cURL'
-      Name  = 'curl'
-      Group = 'Core'
+    DockerDesktop      = @{
+      Id   = 'Docker.DockerDesktop'
+      Name = 'Docker Desktop'
     }
 
-    @{
-      Id    = 'Git.Git'
-      Name  = 'Git'
-      Group = 'Core'
+    FFmpeg             = @{
+      Id   = 'Gyan.FFmpeg'
+      Name = 'FFmpeg'
     }
 
-    @{
-      Id    = 'Docker.DockerDesktop'
-      Name  = 'Docker Desktop'
-      Group = 'Core'
+    Audacity           = @{
+      Id   = 'Audacity.Audacity'
+      Name = 'Audacity'
     }
 
-    @{
-      Id    = 'Gyan.FFmpeg'
-      Name  = 'FFmpeg'
-      Group = 'Core'
+    LocalSend          = @{
+      Id   = 'LocalSend.LocalSend'
+      Name = 'LocalSend'
     }
 
-    @{
-      Id    = 'Audacity.Audacity'
-      Name  = 'Audacity'
-      Group = 'Core'
-    }
-
-    @{
-      Id    = 'LocalSend.LocalSend'
-      Name  = 'LocalSend'
-      Group = 'Core'
-    }
-
-    @{
+    Discord            = @{
       Id      = 'Discord.Discord'
       Name    = 'Discord'
-      Group   = 'Core'
       Network = 'Proxy'
     }
 
-    # ---------------------------------------------------------------------
-    # Optional
-    # ---------------------------------------------------------------------
-
-    @{
+    NvidiaControlPanel = @{
       Id     = '9NF8H0H7WMLT'
       Name   = 'NVIDIA Control Panel'
-      Group  = 'Optional'
       Source = 'msstore'
     }
 
-    @{
+    ChatGPT            = @{
       Id     = '9NT1R1C2HH7J'
       Name   = 'ChatGPT'
-      Group  = 'Optional'
       Source = 'msstore'
     }
 
-    # ---------------------------------------------------------------------
-    # Trial
-    # ---------------------------------------------------------------------
-
-    @{
+    DistroAV           = @{
       Id      = 'DistroAV.DistroAV'
       Name    = 'DistroAV'
-      Group   = 'Trial'
       Network = 'Proxy'
     }
-  )
+  }
+
+  # Arrays define installation order. A package may appear in many profiles.
+  Profiles = @{
+    Default  = @(
+      'OhMyPosh'
+      'NanaZip'
+      'FxSound'
+      'LibreWolf'
+      'Brave'
+      'QBittorrent'
+      'Telegram'
+      'V2RayN'
+      'Spotify'
+      'Obsidian'
+      'OBSStudio'
+      'VLC'
+      'VSCode'
+      'Neovim'
+      'Curl'
+      'Git'
+      'DockerDesktop'
+      'FFmpeg'
+      'Audacity'
+      'LocalSend'
+      'Discord'
+    )
+
+    Optional = @(
+      'NvidiaControlPanel'
+      'ChatGPT'
+    )
+
+    Trial    = @(
+      'DistroAV'
+    )
+  }
 }

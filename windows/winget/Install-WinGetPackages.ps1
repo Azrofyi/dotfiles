@@ -1,70 +1,61 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 
 <#
 .SYNOPSIS
-    Installs applications using WinGet.
+    Installs applications from declarative WinGet profiles.
 
 .DESCRIPTION
-    Loads a declarative application list from packages.psd1.
+    Loads a package catalog and profiles from packages.psd1, resolves an
+    installation plan, executes WinGet, and returns structured result objects.
 
-    Supports:
-      - logical package groups;
-      - winget / msstore sources;
-      - per-package proxy usage;
-      - interactive group and package selection;
-      - standard PowerShell -WhatIf and -Confirm;
-      - handling of expected WinGet exit codes.
+    Packages that require a proxy are skipped when -Proxy is not specified.
+    The script never prompts for proxy settings.
 
 .EXAMPLE
     .\Install-WinGetPackages.ps1
 
-    Installs groups marked as DefaultSelected.
+    Installs the Default profile.
 
 .EXAMPLE
-    .\Install-WinGetPackages.ps1 -Group Core,Optional
+    .\Install-WinGetPackages.ps1 -Profile Default,Optional
 
-    Installs packages from the Core and Optional groups.
-
-.EXAMPLE
-    .\Install-WinGetPackages.ps1 -Interactive
-
-    Opens interactive group and package selection.
+    Installs the union of the Default and Optional profiles.
 
 .EXAMPLE
-    .\Install-WinGetPackages.ps1 -Group Optional,Trial -Interactive
+    .\Install-WinGetPackages.ps1 -Profile @() -IncludePackage Git,VSCode
 
-    Interactively selects packages from the Optional and Trial groups.
+    Installs only Git and Visual Studio Code.
+
+.EXAMPLE
+    .\Install-WinGetPackages.ps1 -ExcludePackage DockerDesktop,Discord
+
+    Installs the Default profile except Docker Desktop and Discord.
 
 .EXAMPLE
     .\Install-WinGetPackages.ps1 -Proxy 'http://127.0.0.1:10809'
 
-    Uses the specified proxy for packages that require it.
+    Uses the specified proxy only for packages configured with Network=Proxy.
 
 .EXAMPLE
-    .\Install-WinGetPackages.ps1 -SkipProxyPackages
+    .\Install-WinGetPackages.ps1 -Profile Default,Trial -WhatIf
 
-    Skips packages configured with Network=Proxy.
-
-.EXAMPLE
-    .\Install-WinGetPackages.ps1 -WhatIf
-
-    Shows what would be installed without performing installation.
-
-.EXAMPLE
-    .\Install-WinGetPackages.ps1 -Group Optional -Confirm
-
-    Installs the Optional group with confirmation prompts.
+    Displays the resolved plan without installing packages.
 #>
 
-[CmdletBinding(SupportsShouldProcess)]
+[CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
 param(
-  [string[]]$Group,
+  [AllowEmptyCollection()]
+  [string[]]$Profile,
 
-  [switch]$Interactive,
+  [Alias('Include')]
+  [AllowEmptyCollection()]
+  [string[]]$IncludePackage,
+
+  [Alias('Exclude')]
+  [AllowEmptyCollection()]
+  [string[]]$ExcludePackage,
 
   [string]$Proxy,
-
-  [switch]$SkipProxyPackages,
 
   [ValidateNotNullOrEmpty()]
   [string]$ConfigPath = (Join-Path $PSScriptRoot 'packages.psd1')
@@ -73,41 +64,21 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-
-#region Runtime
-
-# In PowerShell 7+, non-zero exit codes from native commands must not
-# be converted into PowerShell errors because WinGet exit codes
-# are handled explicitly below.
-$nativeErrorPreference = Get-Variable `
-  -Name PSNativeCommandUseErrorActionPreference `
-  -ErrorAction SilentlyContinue
+# PowerShell 7 can turn non-zero native exit codes into PowerShell errors.
+# WinGet exit codes are interpreted explicitly by this script.
+$nativeErrorPreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
 
 if ($null -ne $nativeErrorPreference) {
   $PSNativeCommandUseErrorActionPreference = $false
 }
 
-#endregion Runtime
-
-
-#region Constants
-
-$script:WingetExitCodes = @{
-  UpdateNotApplicable = -1978335189 # 0x8A15002B
-  AlreadyInstalled    = -1978335135 # 0x8A150061
-}
-
 $script:WingetNoChangeExitCodes = @(
-  $script:WingetExitCodes.UpdateNotApplicable
-  $script:WingetExitCodes.AlreadyInstalled
+  -1978335189 # 0x8A15002B: update not applicable
+  -1978335135 # 0x8A150061: package already installed
 )
 
-#endregion Constants
 
-
-#region Output
-
-function Write-Section {
+function Show-Section {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)]
@@ -118,25 +89,20 @@ function Write-Section {
   Write-Host "========== $Title ==========" -ForegroundColor White
 }
 
-#endregion Output
 
-
-#region Configuration
-
-function Get-WingetPath {
+function Get-CleanValues {
   [CmdletBinding()]
-  param()
+  param(
+    [AllowNull()]
+    [AllowEmptyCollection()]
+    [string[]]$Value
+  )
 
-  $command = Get-Command `
-    -Name 'winget.exe' `
-    -CommandType Application `
-    -ErrorAction SilentlyContinue
-
-  if ($null -eq $command) {
-    throw 'winget.exe was not found.'
+  foreach ($item in @($Value)) {
+    if (-not [string]::IsNullOrWhiteSpace($item)) {
+      $item.Trim()
+    }
   }
-
-  return $command.Source
 }
 
 
@@ -152,26 +118,23 @@ function Import-PackageConfiguration {
     throw "Configuration file not found: $Path"
   }
 
-  $config = Import-PowerShellDataFile -LiteralPath $Path
+  $rawConfig = Import-PowerShellDataFile -LiteralPath $Path
 
-  foreach ($section in @('Defaults', 'Groups', 'Packages')) {
-    if (-not $config.ContainsKey($section)) {
+  foreach ($section in @('Defaults', 'Catalog', 'Profiles')) {
+    if (-not $rawConfig.ContainsKey($section)) {
       throw "Configuration section '$section' is missing."
+    }
+
+    if ($rawConfig[$section] -isnot [System.Collections.IDictionary]) {
+      throw "Configuration section '$section' must be a hashtable."
     }
   }
 
-
-  # --- Defaults ----------------------------------------------------------
-
-  $defaults = $config['Defaults']
-
-  if ($null -eq $defaults) {
-    throw 'The Defaults section cannot be empty.'
-  }
+  $defaults = $rawConfig.Defaults
 
   foreach ($property in @('Source', 'Network')) {
     if (-not $defaults.ContainsKey($property)) {
-      throw "Required property '$property' is missing from Defaults."
+      throw "Required property 'Defaults.$property' is missing."
     }
 
     if ([string]::IsNullOrWhiteSpace([string]$defaults[$property])) {
@@ -182,376 +145,311 @@ function Import-PackageConfiguration {
   $defaultSource = ([string]$defaults['Source']).Trim()
   $defaultNetwork = ([string]$defaults['Network']).Trim()
 
-  if ($defaultNetwork -notin @('Direct', 'Proxy')) {
-    throw (
-      "Defaults.Network contains an unknown value '$defaultNetwork'. " +
-      'Allowed values: Direct, Proxy.'
-    )
+  if ($defaultNetwork -notin @('Default', 'Proxy')) {
+    throw "Defaults.Network must be either 'Default' or 'Proxy'."
   }
 
+  if ($rawConfig.Catalog.Count -eq 0) {
+    throw 'The Catalog section cannot be empty.'
+  }
 
-  # --- Groups ------------------------------------------------------------
+  if ($rawConfig.Profiles.Count -eq 0) {
+    throw 'The Profiles section cannot be empty.'
+  }
 
-  $groups = @(
-    foreach ($item in @($config['Groups'])) {
-      $name = ([string]$item['Name']).Trim()
-      $title = ([string]$item['Title']).Trim()
+  $catalog = @{}
 
-      if ([string]::IsNullOrWhiteSpace($name)) {
-        throw 'A group with an empty Name was found.'
-      }
+  foreach ($key in $rawConfig.Catalog.Keys) {
+    $item = $rawConfig.Catalog[$key]
 
-      if ([string]::IsNullOrWhiteSpace($title)) {
-        throw "Group '$name' does not have a Title."
-      }
-
-      $defaultSelected = if ($item.ContainsKey('DefaultSelected')) {
-        [bool]$item['DefaultSelected']
-      }
-      else {
-        $false
-      }
-
-      [pscustomobject]@{
-        Name            = $name
-        Title           = $title
-        DefaultSelected = $defaultSelected
-      }
+    if ([string]::IsNullOrWhiteSpace([string]$key)) {
+      throw 'A catalog entry with an empty logical key was found.'
     }
-  )
 
-  if ($groups.Count -eq 0) {
-    throw 'No groups are defined in the configuration.'
-  }
-
-  $groupNames = @($groups.Name)
-
-  $duplicateGroups = @(
-    $groupNames |
-    Group-Object |
-    Where-Object Count -gt 1
-  )
-
-  if ($duplicateGroups.Count -gt 0) {
-    throw "Duplicate groups found: $($duplicateGroups.Name -join ', ')"
-  }
-
-
-  # --- Packages ----------------------------------------------------------
-
-  $packages = @(
-    foreach ($item in @($config['Packages'])) {
-      $id = ([string]$item['Id']).Trim()
-      $groupName = ([string]$item['Group']).Trim()
-
-      if ([string]::IsNullOrWhiteSpace($id)) {
-        throw 'A package with an empty Id was found.'
-      }
-
-      if ([string]::IsNullOrWhiteSpace($groupName)) {
-        throw "Package '$id' has an empty Group."
-      }
-
-      if ($groupName -notin $groupNames) {
-        throw "Package '$id' references unknown group '$groupName'."
-      }
-
-      $name = ([string]$item['Name']).Trim()
-
-      if ([string]::IsNullOrWhiteSpace($name)) {
-        $name = $id
-      }
-
-      $source = if ($item.ContainsKey('Source')) {
-        ([string]$item['Source']).Trim()
-      }
-      else {
-        $defaultSource
-      }
-
-      $network = if ($item.ContainsKey('Network')) {
-        ([string]$item['Network']).Trim()
-      }
-      else {
-        $defaultNetwork
-      }
-
-      $additionalArgs = @()
-
-      if (
-        $item.ContainsKey('AdditionalArgs') -and
-        $null -ne $item['AdditionalArgs']
-      ) {
-        $additionalArgs = @(
-          [string[]]$item['AdditionalArgs']
-        )
-      }
-      if ([string]::IsNullOrWhiteSpace($source)) {
-        throw "Package '$id' does not have a Source."
-      }
-
-      if ($network -notin @('Direct', 'Proxy')) {
-        throw (
-          "Package '$id' contains an unknown Network value '$network'. " +
-          'Allowed values: Direct, Proxy.'
-        )
-      }
-
-      [pscustomobject]@{
-        Id             = $id
-        Name           = $name
-        Group          = $groupName
-        Source         = $source
-        Network        = $network
-        AdditionalArgs = $additionalArgs
-      }
+    if ($item -isnot [System.Collections.IDictionary]) {
+      throw "Catalog entry '$key' must be a hashtable."
     }
-  )
+
+    if (-not $item.Contains('Id')) {
+      throw "Catalog entry '$key' does not have an Id."
+    }
+
+    $id = ([string]$item['Id']).Trim()
+
+    if ([string]::IsNullOrWhiteSpace($id)) {
+      throw "Catalog entry '$key' does not have an Id."
+    }
+
+    $name = if ($item.Contains('Name') -and -not [string]::IsNullOrWhiteSpace([string]$item['Name'])) {
+      ([string]$item['Name']).Trim()
+    }
+    else {
+      [string]$key
+    }
+
+    $source = if ($item.Contains('Source')) {
+      ([string]$item['Source']).Trim()
+    }
+    else {
+      $defaultSource
+    }
+
+    $network = if ($item.Contains('Network')) {
+      ([string]$item['Network']).Trim()
+    }
+    else {
+      $defaultNetwork
+    }
+
+    if ([string]::IsNullOrWhiteSpace($source)) {
+      throw "Package '$key' does not have a Source."
+    }
+
+    if ($network -notin @('Default', 'Proxy')) {
+      throw "Package '$key' has an unknown Network value '$network'."
+    }
+
+    $additionalArgs = @()
+
+    if ($item.Contains('AdditionalArgs') -and $null -ne $item['AdditionalArgs']) {
+      $additionalArgs = @(
+        $item['AdditionalArgs'] |
+        ForEach-Object { [string]$_ } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+      )
+    }
+
+    $catalog[[string]$key] = [pscustomobject]@{
+      Key            = [string]$key
+      Id             = $id
+      Name           = $name
+      Source         = $source
+      Network        = $network
+      AdditionalArgs = $additionalArgs
+    }
+  }
 
   $duplicatePackages = @(
-    $packages |
-    Group-Object {
-      '{0}:{1}' -f $_.Source, $_.Id
-    } |
+    $catalog.Values |
+    Group-Object { '{0}:{1}' -f $_.Source, $_.Id } |
     Where-Object Count -gt 1
   )
 
   if ($duplicatePackages.Count -gt 0) {
-    throw (
-      'Duplicate packages found: ' +
-      ($duplicatePackages.Name -join ', ')
-    )
+    throw "Duplicate package definitions found: $($duplicatePackages.Name -join ', ')"
   }
 
-  return [pscustomobject]@{
-    Groups   = $groups
-    Packages = $packages
-  }
-}
+  $profiles = @{}
 
-#endregion Configuration
-
-
-#region Selection
-
-function Resolve-RequestedGroups {
-  [CmdletBinding()]
-  param(
-    [AllowEmptyCollection()]
-    [string[]]$RequestedGroups,
-
-    [Parameter(Mandatory)]
-    [object[]]$AvailableGroups
-  )
-
-  $requested = @(
-    $RequestedGroups |
-    Where-Object {
-      -not [string]::IsNullOrWhiteSpace($_)
-    } |
-    ForEach-Object {
-      $_.Trim()
+  foreach ($profileName in $rawConfig.Profiles.Keys) {
+    if ([string]::IsNullOrWhiteSpace([string]$profileName)) {
+      throw 'A profile with an empty name was found.'
     }
-  )
 
-  if ($requested.Count -eq 0) {
-    return
+    $packageKeys = @(Get-CleanValues -Value @($rawConfig.Profiles[$profileName]))
+    $unknownKeys = @($packageKeys | Where-Object { -not $catalog.ContainsKey($_) })
+
+    if ($unknownKeys.Count -gt 0) {
+      throw "Profile '$profileName' references unknown packages: $($unknownKeys -join ', ')"
+    }
+
+    $duplicateKeys = @($packageKeys | Group-Object | Where-Object Count -gt 1)
+
+    if ($duplicateKeys.Count -gt 0) {
+      throw "Profile '$profileName' contains duplicate packages: $($duplicateKeys.Name -join ', ')"
+    }
+
+    $profiles[[string]$profileName] = $packageKeys
   }
 
-  $availableNames = @($AvailableGroups.Name)
-
-  $unknown = @(
-    $requested |
-    Where-Object {
-      $_ -notin $availableNames
-    }
-  )
-
-  if ($unknown.Count -gt 0) {
-    throw (
-      'Unknown groups: ' +
-      ($unknown -join ', ') +
-      '. Available groups: ' +
-      ($availableNames -join ', ')
-    )
-  }
-
-  $requested
-}
-
-
-function Select-Packages {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]
-    [object[]]$Groups,
-
-    [Parameter(Mandatory)]
-    [object[]]$Packages,
-
-    [AllowEmptyCollection()]
-    [string[]]$RequestedGroups
-  )
-
-  $selectedGroups = @(
-    if ($RequestedGroups.Count -gt 0) {
-      $RequestedGroups
-    }
-    else {
-      $Groups |
-      Where-Object DefaultSelected |
-      ForEach-Object Name
-    }
-  )
-
-  $Packages |
-  Where-Object {
-    $_.Group -in $selectedGroups
+  [pscustomobject]@{
+    Catalog  = $catalog
+    Profiles = $profiles
   }
 }
 
 
-function Select-PackagesInteractively {
+function Resolve-PackageKeys {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)]
-    [object[]]$Groups,
-
-    [Parameter(Mandatory)]
-    [object[]]$Packages,
+    [object]$Configuration,
 
     [AllowEmptyCollection()]
-    [string[]]$RequestedGroups
+    [string[]]$RequestedProfiles,
+
+    [AllowEmptyCollection()]
+    [string[]]$Include,
+
+    [AllowEmptyCollection()]
+    [string[]]$Exclude
   )
 
-  $explicitGroups = $RequestedGroups.Count -gt 0
+  $requestedProfiles = @(Get-CleanValues -Value $RequestedProfiles)
+  $includedKeys = @(Get-CleanValues -Value $Include)
+  $excludedKeys = @(Get-CleanValues -Value $Exclude)
+  $availableProfiles = @($Configuration.Profiles.Keys)
+  $availablePackages = @($Configuration.Catalog.Keys)
 
-  $groupsToShow = @(
-    if ($explicitGroups) {
-      $Groups | Where-Object Name -in $RequestedGroups
-    }
-    else {
-      $Groups
-    }
+  $unknownProfiles = @($requestedProfiles | Where-Object { $_ -notin $availableProfiles })
+
+  if ($unknownProfiles.Count -gt 0) {
+    throw "Unknown profiles: $($unknownProfiles -join ', '). Available profiles: $($availableProfiles -join ', ')"
+  }
+
+  $unknownPackages = @(
+    @($includedKeys + $excludedKeys) |
+    Where-Object { $_ -notin $availablePackages } |
+    Select-Object -Unique
   )
 
-  $groupChoices = @(
-    [System.Management.Automation.Host.ChoiceDescription]::new(
-      '&All',
-      'Install all applications in this group.'
-    )
-    [System.Management.Automation.Host.ChoiceDescription]::new(
-      '&Select',
-      'Select applications individually.'
-    )
-    [System.Management.Automation.Host.ChoiceDescription]::new(
-      'S&kip',
-      'Skip this group.'
-    )
+  if ($unknownPackages.Count -gt 0) {
+    throw "Unknown package keys: $($unknownPackages -join ', ')"
+  }
+
+  $selectedKeys = @()
+
+  foreach ($profileName in $requestedProfiles) {
+    foreach ($key in @($Configuration.Profiles[$profileName])) {
+      if ($key -notin $selectedKeys) {
+        $selectedKeys += $key
+      }
+    }
+  }
+
+  foreach ($key in $includedKeys) {
+    if ($key -notin $selectedKeys) {
+      $selectedKeys += $key
+    }
+  }
+
+  @($selectedKeys | Where-Object { $_ -notin $excludedKeys })
+}
+
+
+function New-WingetArguments {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [object]$Package,
+
+    [string]$Proxy
   )
 
-  $packageChoices = @(
-    [System.Management.Automation.Host.ChoiceDescription]::new(
-      '&Yes',
-      'Install this application.'
-    )
-    [System.Management.Automation.Host.ChoiceDescription]::new(
-      '&No',
-      'Skip this application.'
-    )
+  $wingetArgs = @(
+    'install'
+    '--id'
+    $Package.Id
+    '--source'
+    $Package.Source
   )
 
-  foreach ($group in $groupsToShow) {
-    $groupPackages = @(
-      $Packages | Where-Object Group -eq $group.Name
-    )
+  # Microsoft Store IDs are already unique and do not need --exact.
+  if ($Package.Source -ne 'msstore') {
+    $wingetArgs += '--exact'
+  }
 
-    if ($groupPackages.Count -eq 0) {
-      continue
-    }
+  $wingetArgs += @(
+    '--silent'
+    '--disable-interactivity'
+    '--accept-source-agreements'
+    '--accept-package-agreements'
+  )
 
-    Write-Section -Title $group.Title
+  if ($Package.Network -eq 'Proxy') {
+    $wingetArgs += @('--proxy', $Proxy)
+  }
 
-    foreach ($package in $groupPackages) {
-      Write-Host "  - $($package.Name) [$($package.Id)]" `
-        -ForegroundColor DarkGray
-    }
+  if ($Package.AdditionalArgs.Count -gt 0) {
+    $wingetArgs += $Package.AdditionalArgs
+  }
 
-    Write-Host ''
+  $wingetArgs
+}
 
-    $defaultChoice = if ($explicitGroups -or $group.DefaultSelected) {
-      0
-    }
-    else {
-      2
-    }
 
-    $choice = $Host.UI.PromptForChoice(
-      $group.Title,
-      "Packages in group: $($groupPackages.Count)",
-      $groupChoices,
-      $defaultChoice
-    )
+function New-InstallationPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [object]$Configuration,
 
-    # Install all
-    if ($choice -eq 0) {
-      $groupPackages
-      continue
-    }
+    [Parameter(Mandatory)]
+    [AllowEmptyCollection()]
+    [string[]]$PackageKey,
 
-    # Skip
-    if ($choice -eq 2) {
-      continue
-    }
+    [string]$Proxy
+  )
 
-    # Select individually
-    foreach ($package in $groupPackages) {
-      $message = "$($package.Name) [$($package.Id)]"
+  $resolvedProxy = if ([string]::IsNullOrWhiteSpace($Proxy)) {
+    $null
+  }
+  else {
+    $Proxy.Trim()
+  }
 
-      $packageChoice = $Host.UI.PromptForChoice(
-        'Install application?',
-        $message,
-        $packageChoices,
-        0
-      )
+  foreach ($key in $PackageKey) {
+    $package = $Configuration.Catalog[$key]
+    $missingProxy = $package.Network -eq 'Proxy' -and $null -eq $resolvedProxy
 
-      if ($packageChoice -eq 0) {
-        $package
+    [pscustomobject]@{
+      Key       = $package.Key
+      Id        = $package.Id
+      Name      = $package.Name
+      Source    = $package.Source
+      Network   = $package.Network
+      Action    = if ($missingProxy) { 'Skip' } else { 'Install' }
+      Reason    = if ($missingProxy) { 'Proxy was not specified.' } else { $null }
+      Arguments = if ($missingProxy) {
+        @()
+      }
+      else {
+        @(New-WingetArguments -Package $package -Proxy $resolvedProxy)
       }
     }
   }
 }
 
-#endregion Selection
 
-
-#region Proxy
-
-function Resolve-Proxy {
+function Show-InstallationPlan {
   [CmdletBinding()]
   param(
-    [string]$Proxy
+    [Parameter(Mandatory)]
+    [AllowEmptyCollection()]
+    [object[]]$Plan
   )
 
-  if (-not [string]::IsNullOrWhiteSpace($Proxy)) {
-    return $Proxy.Trim()
+  Show-Section -Title 'Installation plan'
+
+  if ($Plan.Count -eq 0) {
+    Write-Host 'No packages selected.' -ForegroundColor Yellow
+    return
   }
 
-  $resolvedProxy = Read-Host (
-    'Enter HTTP proxy, for example http://127.0.0.1:10809'
-  )
-
-  if ([string]::IsNullOrWhiteSpace($resolvedProxy)) {
-    return $null
+  foreach ($item in $Plan) {
+    if ($item.Action -eq 'Install') {
+      Write-Host "  + $($item.Name) [$($item.Key)] source=$($item.Source), network=$($item.Network)" -ForegroundColor Cyan
+    }
+    else {
+      Write-Host "  - $($item.Name) [$($item.Key)] skipped: $($item.Reason)" -ForegroundColor Yellow
+    }
   }
-
-  return $resolvedProxy.Trim()
 }
 
-#endregion Proxy
 
+function Get-WingetPath {
+  [CmdletBinding()]
+  param()
 
-#region WinGet
+  $command = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
+
+  if ($null -eq $command) {
+    throw 'winget.exe was not found.'
+  }
+
+  $command.Source
+}
+
 
 function Format-ExitCode {
   [CmdletBinding()]
@@ -567,117 +465,89 @@ function Format-ExitCode {
     [long]$ExitCode
   }
 
-  return '0x{0:X8}' -f $unsignedCode
+  '0x{0:X8}' -f $unsignedCode
 }
 
 
-function Install-WingetPackage {
+function New-InstallResult {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)]
-    [object]$Package,
+    [object]$PlanItem,
+
+    [Parameter(Mandatory)]
+    [string]$Status,
+
+    [AllowNull()]
+    [Nullable[int]]$ExitCode,
+
+    [AllowNull()]
+    [Nullable[timespan]]$Duration,
+
+    [string]$Reason
+  )
+
+  [pscustomobject]@{
+    Key         = $PlanItem.Key
+    Id          = $PlanItem.Id
+    Name        = $PlanItem.Name
+    Source      = $PlanItem.Source
+    Network     = $PlanItem.Network
+    Status      = $Status
+    ExitCode    = $ExitCode
+    ExitCodeHex = if ($null -eq $ExitCode) { $null } else { Format-ExitCode -ExitCode $ExitCode }
+    Duration    = $Duration
+    Reason      = $Reason
+  }
+}
+
+
+function Install-WingetPlanItem {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [object]$PlanItem,
 
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
-    [string]$WingetPath,
-
-    [string]$Proxy
+    [string]$WingetPath
   )
 
-  $useProxy = $Package.Network -eq 'Proxy'
-
-  if ($useProxy -and [string]::IsNullOrWhiteSpace($Proxy)) {
-    throw "Package '$($Package.Id)' requires a proxy, but Proxy was not specified."
-  }
-
-  $wingetArgs = @(
-    'install'
-    '--id'
-    $Package.Id
-    '--source'
-    $Package.Source
-  )
-
-  # Microsoft Store uses unique Store IDs, so --exact is not required here.
-  if ($Package.Source -ne 'msstore') {
-    $wingetArgs += '--exact'
-  }
-
-  $wingetArgs += @(
-    '--silent'
-    '--disable-interactivity'
-    '--accept-source-agreements'
-    '--accept-package-agreements'
-  )
-
-  if ($useProxy) {
-    $wingetArgs += @(
-      '--proxy'
-      $Proxy
-    )
-  }
-
-  if ($Package.AdditionalArgs.Count -gt 0) {
-    $wingetArgs += $Package.AdditionalArgs
-  }
-
-  $installLabel = if ($useProxy) {
+  $installLabel = if ($PlanItem.Network -eq 'Proxy') {
     '[*] Installing via proxy'
   }
   else {
     '[*] Installing'
   }
 
-  Write-Host (
-    "$installLabel`: $($Package.Name) [$($Package.Id)]"
-  ) -ForegroundColor Cyan
+  Write-Host "${installLabel}: $($PlanItem.Name) [$($PlanItem.Id)]" -ForegroundColor Cyan
 
   $startedAt = Get-Date
+  $wingetArgs = [string[]]$PlanItem.Arguments
 
-  # Display WinGet stdout to the user without returning it
-  # through this function's pipeline.
+  # Keep native stdout visible without mixing it with structured results.
   & $WingetPath @wingetArgs | Out-Host
 
   $exitCode = $LASTEXITCODE
   $duration = (Get-Date) - $startedAt
-  $formattedCode = Format-ExitCode -ExitCode $exitCode
 
   if ($exitCode -eq 0) {
-    $status = 'Succeeded'
-    Write-Host "[OK] $($Package.Name)" -ForegroundColor Green
-  }
-  elseif ($exitCode -in $script:WingetNoChangeExitCodes) {
-    $status = 'Current'
-
-    Write-Host (
-      "[SKIP] Already installed or up to date: $($Package.Name)"
-    ) -ForegroundColor DarkGreen
-  }
-  else {
-    $status = 'Failed'
-
-    Write-Warning (
-      "[FAILED] $($Package.Name): $formattedCode ($exitCode)"
-    )
+    Write-Host "[OK] $($PlanItem.Name)" -ForegroundColor Green
+    New-InstallResult -PlanItem $PlanItem -Status 'Succeeded' -ExitCode $exitCode -Duration $duration
+    return
   }
 
-  [pscustomobject]@{
-    Id          = $Package.Id
-    Name        = $Package.Name
-    Group       = $Package.Group
-    Source      = $Package.Source
-    Network     = $Package.Network
-    Status      = $status
-    ExitCode    = $exitCode
-    ExitCodeHex = $formattedCode
-    Duration    = $duration
+  if ($exitCode -in $script:WingetNoChangeExitCodes) {
+    Write-Host "[CURRENT] $($PlanItem.Name) is already installed or up to date." -ForegroundColor DarkGreen
+    New-InstallResult -PlanItem $PlanItem -Status 'Current' -ExitCode $exitCode -Duration $duration
+    return
   }
+
+  $formattedCode = Format-ExitCode -ExitCode $exitCode
+  Write-Warning "[FAILED] $($PlanItem.Name): $formattedCode ($exitCode)"
+  New-InstallResult -PlanItem $PlanItem -Status 'Failed' -ExitCode $exitCode -Duration $duration
 }
 
-#endregion WinGet
-
-
-#region Summary
 
 function Show-InstallSummary {
   [CmdletBinding()]
@@ -687,159 +557,106 @@ function Show-InstallSummary {
     [object[]]$Results
   )
 
-  Write-Section -Title 'Summary'
+  Show-Section -Title 'Summary'
 
   if ($Results.Count -eq 0) {
-    Write-Host 'No installation was performed.' -ForegroundColor Yellow
-    return 0
+    Write-Host 'No packages selected.' -ForegroundColor Yellow
+    return
   }
 
-  $succeeded = @(
-    $Results | Where-Object Status -eq 'Succeeded'
-  )
-
-  $current = @(
-    $Results | Where-Object Status -eq 'Current'
-  )
-
-  $failed = @(
-    $Results | Where-Object Status -eq 'Failed'
-  )
+  $succeeded = @($Results | Where-Object Status -eq 'Succeeded')
+  $current = @($Results | Where-Object Status -eq 'Current')
+  $skipped = @($Results | Where-Object Status -eq 'Skipped')
+  $notRun = @($Results | Where-Object Status -eq 'NotRun')
+  $failed = @($Results | Where-Object Status -eq 'Failed')
 
   Write-Host "Installed: $($succeeded.Count)" -ForegroundColor Green
+  Write-Host "Already current: $($current.Count)" -ForegroundColor Green
+  Write-Host "Skipped: $($skipped.Count)" -ForegroundColor Yellow
+  Write-Host "Not run: $($notRun.Count)" -ForegroundColor DarkYellow
+  Write-Host "Failed: $($failed.Count)" -ForegroundColor $(if ($failed.Count -eq 0) { 'Green' } else { 'Red' })
 
-  foreach ($item in $succeeded) {
-    Write-Host "  + $($item.Name) [$($item.Source)]" `
-      -ForegroundColor DarkGreen
+  foreach ($item in @($skipped + $notRun + $failed)) {
+    $detail = if ([string]::IsNullOrWhiteSpace($item.Reason)) {
+      $item.ExitCodeHex
+    }
+    else {
+      $item.Reason
+    }
+
+    Write-Host "  - $($item.Name): $detail" -ForegroundColor DarkYellow
   }
-
-  Write-Host "Already up to date: $($current.Count)" -ForegroundColor Green
-
-  foreach ($item in $current) {
-    Write-Host "  = $($item.Name) [$($item.Source)]" `
-      -ForegroundColor DarkGreen
-  }
-
-  if ($failed.Count -eq 0) {
-    Write-Host 'No failures.' -ForegroundColor Green
-    return 0
-  }
-
-  Write-Host "Failed: $($failed.Count)" -ForegroundColor Red
-
-  foreach ($item in $failed) {
-    Write-Host (
-      "  - $($item.Name) [$($item.Source)] code=$($item.ExitCodeHex)"
-    ) -ForegroundColor DarkRed
-  }
-
-  return 1
-}
-
-#endregion Summary
-
-
-#region Main
-
-$wingetPath = Get-WingetPath
-
-$config = Import-PackageConfiguration -Path $ConfigPath
-
-$groups = @($config.Groups)
-$packages = @($config.Packages)
-
-$requestedGroups = @(
-  Resolve-RequestedGroups `
-    -RequestedGroups $Group `
-    -AvailableGroups $groups
-)
-
-
-# --- Filtering -------------------------------------------------------------
-
-if ($SkipProxyPackages) {
-  $packages = @(
-    $packages | Where-Object Network -ne 'Proxy'
-  )
 }
 
 
-# --- Selection -------------------------------------------------------------
+# Main
+$configuration = Import-PackageConfiguration -Path $ConfigPath
 
-if ($Interactive) {
-  $selectedPackages = @(
-    Select-PackagesInteractively `
-      -Groups $groups `
-      -Packages $packages `
-      -RequestedGroups $requestedGroups
-  )
+$requestedProfiles = if ($PSBoundParameters.ContainsKey('Profile')) {
+  @($Profile)
 }
 else {
-  $selectedPackages = @(
-    Select-Packages `
-      -Groups $groups `
-      -Packages $packages `
-      -RequestedGroups $requestedGroups
-  )
+  @('Default')
 }
 
-if ($selectedPackages.Count -eq 0) {
-  exit (Show-InstallSummary -Results @())
+$resolveParameters = @{
+  Configuration     = $configuration
+  RequestedProfiles = $requestedProfiles
+  Include           = $IncludePackage
+  Exclude           = $ExcludePackage
+}
+$packageKeys = @(Resolve-PackageKeys @resolveParameters)
+
+$planParameters = @{
+  Configuration = $configuration
+  PackageKey    = $packageKeys
+  Proxy         = $Proxy
+}
+$plan = @(New-InstallationPlan @planParameters)
+
+Show-InstallationPlan -Plan $plan
+
+$installItems = @($plan | Where-Object Action -eq 'Install')
+$wingetPath = if ($installItems.Count -gt 0) {
+  Get-WingetPath
+}
+else {
+  $null
 }
 
-
-# --- Proxy -----------------------------------------------------------------
-
-$requiresProxy = $selectedPackages.Network -contains 'Proxy'
-$resolvedProxy = $null
-
-# Do not prompt for a proxy in -WhatIf mode because no installation
-# will actually be performed.
-if ($requiresProxy -and -not $WhatIfPreference) {
-  $resolvedProxy = Resolve-Proxy -Proxy $Proxy
-
-  if ([string]::IsNullOrWhiteSpace($resolvedProxy)) {
-    Write-Warning (
-      'Proxy was not specified. Packages with Network=Proxy will be skipped.'
-    )
-
-    $selectedPackages = @(
-      $selectedPackages | Where-Object Network -ne 'Proxy'
-    )
-  }
-}
-
-if ($selectedPackages.Count -eq 0) {
-  exit (Show-InstallSummary -Results @())
-}
-
-
-# --- Installation ----------------------------------------------------------
-
-$allResults = @(
-  foreach ($package in $selectedPackages) {
-    $target = (
-      "$($package.Name) [$($package.Id)], " +
-      "source=$($package.Source), network=$($package.Network)"
-    )
-
-    if (-not $PSCmdlet.ShouldProcess(
-        $target,
-        'Install WinGet package'
-      )) {
+$results = @(
+  foreach ($item in $plan) {
+    if ($item.Action -eq 'Skip') {
+      Write-Warning "$($item.Name) was skipped: $($item.Reason)"
+      New-InstallResult -PlanItem $item -Status 'Skipped' -ExitCode $null -Duration $null -Reason $item.Reason
       continue
     }
 
-    Install-WingetPackage `
-      -Package $package `
-      -WingetPath $wingetPath `
-      -Proxy $resolvedProxy
+    $target = "$($item.Name) [$($item.Id)], source=$($item.Source), network=$($item.Network)"
+
+    if ($PSCmdlet.ShouldProcess($target, 'Install WinGet package')) {
+      Install-WingetPlanItem -PlanItem $item -WingetPath $wingetPath
+    }
+    else {
+      $reason = if ($WhatIfPreference) {
+        'WhatIf: installation was not executed.'
+      }
+      else {
+        'Installation was declined.'
+      }
+
+      New-InstallResult -PlanItem $item -Status 'NotRun' -ExitCode $null -Duration $null -Reason $reason
+    }
   }
 )
 
+Show-InstallSummary -Results $results
 
-# --- Summary ---------------------------------------------------------------
+# Emit data through the success stream so callers can filter or export results.
+$results
 
-exit (Show-InstallSummary -Results $allResults)
+if (@($results | Where-Object Status -eq 'Failed').Count -gt 0) {
+  exit 1
+}
 
-#endregion Main
+exit 0
