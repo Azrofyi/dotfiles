@@ -15,8 +15,10 @@
   Example:
     AdditionalArgs = @('--scope', 'user')
 
-  Do not use managed arguments in AdditionalArgs:
-    --id, --source, --exact, --proxy, --no-proxy, --silent.
+  Do not use arguments already managed by the installer in AdditionalArgs:
+    --id, --source, --exact, --proxy, --no-proxy, --silent,
+    --disable-interactivity, --accept-source-agreements,
+    --accept-package-agreements.
 
   The proxy address is not stored here. Pass it with -Proxy.
   Profile entries define installation order and must reference Catalog keys.
@@ -31,6 +33,16 @@
   # Catalog contains only package identity and installation metadata.
   # Profiles below describe which packages belong to an installation set.
   Catalog  = @{
+    PowerShell         = @{
+      Id   = 'Microsoft.PowerShell'
+      Name = 'PowerShell'
+    }
+
+    WindowsTerminal    = @{
+      Id   = 'Microsoft.WindowsTerminal'
+      Name = 'Windows Terminal'
+    }
+
     OhMyPosh           = @{
       Id   = 'JanDeDobbeleer.OhMyPosh'
       Name = 'Oh My Posh'
@@ -159,9 +171,22 @@
   # Arrays define installation order. A package may appear in many profiles.
   Profiles = @{
     Default  = @(
+      'PowerShell'
+      'WindowsTerminal'
       'OhMyPosh'
       'NanaZip'
-      'FxSound'
+      'VSCode'
+      'Neovim'
+      'Curl'
+      'Git'
+    )
+
+    Optional = @(
+      'FFmpeg'
+      'Audacity'
+      'DockerDesktop'
+      'LocalSend'
+      'Discord'
       'LibreWolf'
       'Brave'
       'QBittorrent'
@@ -171,24 +196,13 @@
       'Obsidian'
       'OBSStudio'
       'VLC'
-      'VSCode'
-      'Neovim'
-      'Curl'
-      'Git'
-      'DockerDesktop'
-      'FFmpeg'
-      'Audacity'
-      'LocalSend'
-      'Discord'
-    )
-
-    Optional = @(
+      'FxSound'
       'NvidiaControlPanel'
-      'ChatGPT'
     )
 
     Trial    = @(
       'DistroAV'
+      'ChatGPT'
     )
   }
 }

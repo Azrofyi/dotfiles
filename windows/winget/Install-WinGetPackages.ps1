@@ -158,6 +158,17 @@ function Import-PackageConfiguration {
   }
 
   $catalog = @{}
+  $managedArgumentNames = @(
+    '--accept-package-agreements'
+    '--accept-source-agreements'
+    '--disable-interactivity'
+    '--exact'
+    '--id'
+    '--no-proxy'
+    '--proxy'
+    '--silent'
+    '--source'
+  )
 
   foreach ($key in $rawConfig.Catalog.Keys) {
     $item = $rawConfig.Catalog[$key]
@@ -214,9 +225,20 @@ function Import-PackageConfiguration {
     if ($item.Contains('AdditionalArgs') -and $null -ne $item['AdditionalArgs']) {
       $additionalArgs = @(
         $item['AdditionalArgs'] |
-        ForEach-Object { [string]$_ } |
+        ForEach-Object { ([string]$_).Trim() } |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
       )
+    }
+
+    $managedArguments = @(
+      $additionalArgs |
+      ForEach-Object { ($_ -split '=', 2)[0].ToLowerInvariant() } |
+      Where-Object { $_ -in $managedArgumentNames } |
+      Select-Object -Unique
+    )
+
+    if ($managedArguments.Count -gt 0) {
+      throw "Package '$key' uses arguments managed by the script: $($managedArguments -join ', ')"
     }
 
     $catalog[[string]$key] = [pscustomobject]@{
@@ -616,13 +638,7 @@ $plan = @(New-InstallationPlan @planParameters)
 
 Show-InstallationPlan -Plan $plan
 
-$installItems = @($plan | Where-Object Action -eq 'Install')
-$wingetPath = if ($installItems.Count -gt 0) {
-  Get-WingetPath
-}
-else {
-  $null
-}
+$wingetPath = $null
 
 $results = @(
   foreach ($item in $plan) {
@@ -635,6 +651,10 @@ $results = @(
     $target = "$($item.Name) [$($item.Id)], source=$($item.Source), network=$($item.Network)"
 
     if ($PSCmdlet.ShouldProcess($target, 'Install WinGet package')) {
+      if ([string]::IsNullOrWhiteSpace($wingetPath)) {
+        $wingetPath = Get-WingetPath
+      }
+
       Install-WingetPlanItem -PlanItem $item -WingetPath $wingetPath
     }
     else {
