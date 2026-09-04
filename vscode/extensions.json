@@ -1,14 +1,16 @@
 {
   "recommendations": [
-    //Theme
-    "dracula-theme.theme-dracula",
-    "zhuangtongfa.material-theme",
+    // Themes
     "DaltonMenezes.aura-theme",
-    "vscode-icons-team.vscode-icons",
-    "PKief.material-icon-theme",
     "BeardedBear.beardedtheme",
+    "Catppuccin.catppuccin-vsc",
+    "nebula-themes.nebula-aura-theme",
+    "enkia.tokyo-night",
 
+    // Containers / Remote
+    "ms-vscode-remote.remote-wsl",
     "ms-vscode-remote.remote-containers",
+
     "mechatroner.rainbow-csv",
     "esbenp.prettier-vscode",
     "streetsidesoftware.code-spell-checker",
