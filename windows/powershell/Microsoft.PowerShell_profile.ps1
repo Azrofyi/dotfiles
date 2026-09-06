@@ -1,56 +1,33 @@
-# PowerShell profile
-# Path example:
-# $PROFILE
+$useConsoleUi = $Host.Name -eq 'ConsoleHost' -and
+-not [Console]::IsInputRedirected -and
+-not [Console]::IsOutputRedirected
 
-#region Safety
-
-$script:IsInteractive = $Host.Name -eq 'ConsoleHost'
-
-#endregion Safety
-
-#region Modules and prompt
-
-if ($script:IsInteractive) {
+if ($useConsoleUi) {
   if (Get-Module -ListAvailable -Name Terminal-Icons) {
     Import-Module Terminal-Icons
   }
 
-  if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-    $themePath = Join-Path $HOME 'Documents\PowerShell\dracula.omp.json'
-    if (Test-Path $themePath) {
-      oh-my-posh init pwsh --config $themePath | Invoke-Expression
+  # Keep dracula.omp.json next to this profile.
+  $themePath = Join-Path $PSScriptRoot 'dracula.omp.json'
+  if ((Get-Command oh-my-posh.exe -CommandType Application -ErrorAction SilentlyContinue) -and
+    (Test-Path -LiteralPath $themePath -PathType Leaf)) {
+    oh-my-posh.exe init pwsh --config $themePath | Invoke-Expression
+  }
+
+  if (Get-Module -ListAvailable -Name PSReadLine) {
+    Import-Module PSReadLine
+
+    $readLineOptions = @{
+      EditMode            = 'Windows'
+      HistoryNoDuplicates = $true
+      ShowToolTips        = $true
+      PredictionSource    = 'History'
+      PredictionViewStyle = 'ListView'
+      BellStyle           = 'None'
     }
+    Set-PSReadLineOption @readLineOptions
   }
 }
-
-#endregion Modules and prompt
-
-#region PSReadLine
-
-if ($script:IsInteractive -and (Get-Module -ListAvailable -Name PSReadLine)) {
-  Import-Module PSReadLine
-
-  Set-PSReadLineOption -EditMode Windows
-  Set-PSReadLineOption -HistoryNoDuplicates:$true
-  Set-PSReadLineOption -ShowToolTips:$true
-
-  # Удобная история/подсказки из истории
-  Set-PSReadLineOption -PredictionSource History
-  Set-PSReadLineOption -PredictionViewStyle ListView
-
-  # Enter принимает строку только если синтаксис валидный
-  Set-PSReadLineKeyHandler -Chord 'Enter' -Function ValidateAndAcceptLine
-
-  # QoL keybindings
-  Set-PSReadLineKeyHandler -Chord 'Ctrl+d' -Function DeleteCharOrExit
-  Set-PSReadLineKeyHandler -Chord 'Ctrl+w' -Function BackwardKillWord
-  Set-PSReadLineKeyHandler -Chord 'Alt+d'  -Function KillWord
-  Set-PSReadLineKeyHandler -Chord 'Ctrl+u' -Function BackwardDeleteLine
-  Set-PSReadLineKeyHandler -Chord 'Ctrl+k' -Function ForwardDeleteLine
-  Set-PSReadLineKeyHandler -Chord 'Ctrl+l' -Function ClearScreen
-}
-
-#endregion PSReadLine
 
 #region Functions
 
@@ -62,79 +39,15 @@ function Get-PathList {
   Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 }
 
-function Get-CommandPath {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory, Position = 0)]
-    [string]$Name
-  )
-
-  Get-Command -Name $Name -ErrorAction SilentlyContinue |
-  Select-Object -ExpandProperty Path -ErrorAction SilentlyContinue
-}
-
-function Update-WingetPackages {
-  [CmdletBinding()]
-  param()
-
-  if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    Write-Warning 'winget не найден.'
-    return
-  }
-
-  winget upgrade --all `
-    --include-unknown `
-    --accept-source-agreements `
-    --accept-package-agreements `
-    --disable-interactivity `
-    --source winget
-}
-
-function New-TouchFile {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory, Position = 0)]
-    [string[]]$Path
-  )
-
-  foreach ($item in $Path) {
-    if (Test-Path -LiteralPath $item) {
-      (Get-Item -LiteralPath $item).LastWriteTime = Get-Date
-    }
-    else {
-      New-Item -ItemType File -Path $item -Force | Out-Null
-    }
-  }
-}
-
-function Edit-Profile {
-  [CmdletBinding()]
-  param()
-
-  if (Get-Command code -ErrorAction SilentlyContinue) {
-    code $PROFILE
-    return
-  }
-
-  notepad $PROFILE
-}
-
-function Update-Profile {
-  [CmdletBinding()]
-  param()
-
-  . $PROFILE
-}
-
 function Get-PublicIP {
   [CmdletBinding()]
   param()
 
   try {
-    Invoke-RestMethod -Uri 'https://ifconfig.me/ip'
+    Invoke-RestMethod -Uri 'https://ifconfig.me/ip' -TimeoutSec 10 -ErrorAction Stop
   }
   catch {
-    Write-Warning "Не удалось получить public IP: $($_.Exception.Message)"
+    Write-Warning "Could not retrieve the public IP address: $($_.Exception.Message)"
   }
 }
 
@@ -150,29 +63,49 @@ function Get-LocalIP {
   Select-Object InterfaceAlias, IPAddress
 }
 
-function Test-Port {
-  [CmdletBinding()]
+function Copy-Path {
   param(
-    [Parameter(Mandatory, Position = 0)]
-    [string]$ComputerName,
+    [string]$Path = '.'
+  )
 
-    [Parameter(Mandatory, Position = 1)]
+  $resolvedPath = Resolve-Path -LiteralPath $Path -ErrorAction Stop
+  Set-Clipboard -Value $resolvedPath.ProviderPath
+}
+
+function Get-ListeningPort {
+  param(
+    [ValidateRange(1, 65535)]
     [int]$Port
   )
 
-  Test-NetConnection -ComputerName $ComputerName -Port $Port
+  Get-NetTCPConnection -State Listen |
+  Where-Object { -not $Port -or $_.LocalPort -eq $Port } |
+  Sort-Object LocalPort |
+  Select-Object LocalAddress, LocalPort, OwningProcess, @{
+    Name       = 'ProcessName'
+    Expression = {
+      (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName
+    }
+  }
+}
+
+function Edit-Hosts {
+  $processOptions = @{
+    FilePath     = Join-Path $env:SystemRoot 'System32\notepad.exe'
+    ArgumentList = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+    Verb         = 'RunAs'
+  }
+
+  Start-Process @processOptions
 }
 
 #endregion Functions
 
 #region Aliases
 
-Set-Alias -Name pathl     -Value Get-PathList
-Set-Alias -Name which     -Value Get-CommandPath
-Set-Alias -Name updateall -Value Update-WingetPackages
-Set-Alias -Name touch     -Value New-TouchFile
-Set-Alias -Name ep        -Value Edit-Profile
-Set-Alias -Name up        -Value Update-Profile
-Set-Alias -Name ll        -Value Get-ChildItem
+Set-Alias -Name ports -Value Get-ListeningPort
+Set-Alias -Name cpath -Value Copy-Path
+Set-Alias -Name pathl -Value Get-PathList
+Set-Alias -Name ll -Value Get-ChildItem
 
 #endregion Aliases

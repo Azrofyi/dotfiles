@@ -3,57 +3,58 @@
 
 <#
 .SYNOPSIS
-  Applies a baseline configuration to a Windows workstation.
+  Configures a personal Windows workstation after a clean installation.
 
 .DESCRIPTION
-  Configures the current user's mouse and keyboard settings, sets the Windows
-  time zone, synchronizes time using the existing Windows time source,
-  configures the hardware clock as UTC for dual-boot compatibility, prepares
-  WinGet, enables its proxy command-line options, and optionally enables
-  Hyper-V. Application installation is intentionally handled by the separate
-  Install-WinGetPackages.ps1 script.
+  Intended for 64-bit Windows 11, starting with Windows PowerShell 5.1.
+  Run elevated as the account you want to configure: HKCU settings and
+  App Installer registration belong to the process user.
 
-  By default, the script asks whether to run each configuration task. Use -All
-  to run every task without selection prompts. The script is safe to run more
-  than once, checks the current state before changing Windows settings, and
-  supports -WhatIf and -Confirm.
+  Configures mouse and keyboard settings, the time zone and UTC hardware
+  clock interpretation for dual boot. Synchronizes with the existing time
+  source without changing NTP peers. Prepares WinGet and enables permission
+  to use --proxy later; no proxy address is configured. Enables Hyper-V
+  where available. App Installer must already be installed on the machine.
 
-  NTP peers are deliberately left unchanged. Standalone computers can use the
-  Windows default time source, while domain-joined computers should normally
-  synchronize through the Active Directory domain hierarchy.
+  PowerShell modules are installed separately with Install-PowerShellModules.ps1
+  in PowerShell 7.4 or later. Profiles and application packages are managed
+  separately.
+
+  By default, asks whether to run each task (default: No). -All selects every
+  task, including Hyper-V and UTC. -Confirm confirms related changes as one
+  operation. -WhatIf previews tasks without applying configuration changes.
+
+  Unexpected errors stop execution. Time synchronization failures and an
+  unavailable Hyper-V feature produce warnings. Windows never restarts
+  automatically; required restart/sign-out instructions are printed even
+  if a later task fails.
 
 .PARAMETER TimeZoneId
-  Windows time zone identifier. The default is Russian Standard Time.
+  Windows time zone ID. Default: Russian Standard Time.
 
 .PARAMETER MouseSpeed
-  Mouse pointer speed from 1 through 20. Mouse acceleration is disabled.
+  Pointer speed on the registry/API scale of 1-20, not the legacy 11-position
+  slider. Preserves the original default of 6 (Windows default: 10).
+  Mouse acceleration is disabled.
 
 .PARAMETER All
-  Runs every configuration task without selection prompts. This includes
-  enabling Hyper-V.
+  Selects every task without the task-selection prompts. Does not override
+  -WhatIf or an explicit -Confirm.
 
 .EXAMPLE
   .\Invoke-WindowsBootstrap.ps1
-
-  Interactively asks whether to run each configuration task.
-
-.EXAMPLE
-  .\Invoke-WindowsBootstrap.ps1 -All
-
-  Runs every configuration task without selection prompts.
+  Select tasks interactively.
 
 .EXAMPLE
   .\Invoke-WindowsBootstrap.ps1 -All -WhatIf
-
-  Previews every configuration task without selection prompts.
+  Preview all tasks without applying configuration changes.
 
 .EXAMPLE
-  .\Invoke-WindowsBootstrap.ps1 -TimeZoneId 'Russian Standard Time' -MouseSpeed 6
-
-  Uses custom values while interactively selecting configuration tasks.
+  .\Invoke-WindowsBootstrap.ps1 -All
+  Apply all tasks, including Hyper-V and UTC hardware clock interpretation.
 #>
 
-[CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
+[CmdletBinding(SupportsShouldProcess)]
 param(
   [ValidateNotNullOrEmpty()]
   [string]$TimeZoneId = 'Russian Standard Time',
@@ -64,20 +65,14 @@ param(
   [switch]$All
 )
 
-Set-StrictMode -Version Latest
+Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
-# PowerShell 7 can turn a nonzero native exit code into a PowerShell error.
-# Exit codes are handled explicitly below so Windows PowerShell 5.1 and
-# PowerShell 7 behave consistently.
-$nativeErrorPreference = Get-Variable -Name 'PSNativeCommandUseErrorActionPreference' -ErrorAction SilentlyContinue
+$script:restartRequired = $false
+$script:signOutRequired = $false
+$script:hadWarnings = $false
 
-if ($null -ne $nativeErrorPreference) {
-  $PSNativeCommandUseErrorActionPreference = $false
-}
-
-$script:WingetUpdateNotApplicableExitCode = -1978335189 # 0x8A15002B
-
+# Shared helpers for status, task selection and native exit codes.
 function Write-Status {
   [CmdletBinding()]
   param(
@@ -86,116 +81,27 @@ function Write-Status {
     [string]$Level,
 
     [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
     [string]$Message
   )
 
+  if ($Level -eq 'Warning') {
+    $script:hadWarnings = $true
+    Write-Warning $Message
+    return
+  }
+
   $style = switch ($Level) {
-    'Step' { @{ Prefix = '[*]'; Color = [ConsoleColor]::Cyan } }
-    'Success' { @{ Prefix = '[OK]'; Color = [ConsoleColor]::Green } }
-    'Skip' { @{ Prefix = '[SKIP]'; Color = [ConsoleColor]::Yellow } }
-    'Warning' { @{ Prefix = '[!]'; Color = [ConsoleColor]::Yellow } }
+    'Step' { @{ Prefix = '[*]'; Color = 'Cyan' } }
+    'Success' { @{ Prefix = '[OK]'; Color = 'Green' } }
+    'Skip' { @{ Prefix = '[SKIP]'; Color = 'Yellow' } }
   }
-
   Write-Host "$($style.Prefix) $Message" -ForegroundColor $style.Color
-}
-
-function Format-ExitCode {
-  [CmdletBinding()]
-  [OutputType([string])]
-  param(
-    [Parameter(Mandatory)]
-    [int]$ExitCode
-  )
-
-  $unsignedCode = if ($ExitCode -lt 0) {
-    [long]$ExitCode + 4294967296
-  }
-  else {
-    [long]$ExitCode
-  }
-
-  return '0x{0:X8}' -f $unsignedCode
-}
-
-function Invoke-NativeCommand {
-  [CmdletBinding()]
-  [OutputType([int])]
-  param(
-    [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
-    [string]$FilePath,
-
-    [AllowEmptyCollection()]
-    [string[]]$Arguments = @(),
-
-    [ValidateNotNullOrEmpty()]
-    [int[]]$SuccessExitCodes = @(0),
-
-    [switch]$Quiet
-  )
-
-  Write-Verbose "Executing: $FilePath $($Arguments -join ' ')"
-
-  if ($Quiet) {
-    & $FilePath @Arguments | Out-Null
-  }
-  else {
-    # Keep native stdout out of this function's success output stream.
-    & $FilePath @Arguments | Out-Host
-  }
-
-  if ($null -eq $LASTEXITCODE) {
-    throw "$FilePath did not provide a process exit code."
-  }
-
-  $exitCode = [int]$LASTEXITCODE
-
-  if ($exitCode -in $SuccessExitCodes) {
-    return $exitCode
-  }
-
-  $formattedCode = Format-ExitCode -ExitCode $exitCode
-  throw "$FilePath exited with code $formattedCode ($exitCode). Arguments: $($Arguments -join ' ')"
-}
-
-function Confirm-Choice {
-  [CmdletBinding()]
-  [OutputType([bool])]
-  param(
-    [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
-    [string]$Title,
-
-    [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
-    [string]$Message,
-
-    [bool]$Default = $false
-  )
-
-  $choices = @(
-    [System.Management.Automation.Host.ChoiceDescription]::new(
-      '&Yes',
-      'Perform the operation.'
-    )
-    [System.Management.Automation.Host.ChoiceDescription]::new(
-      '&No',
-      'Skip the operation.'
-    )
-  )
-
-  $defaultChoice = if ($Default) { 0 } else { 1 }
-  $choice = $Host.UI.PromptForChoice($Title, $Message, $choices, $defaultChoice)
-
-  return $choice -eq 0
 }
 
 function Invoke-OptionalTask {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
     [string]$Name,
 
     [Parameter(Mandatory)]
@@ -204,423 +110,325 @@ function Invoke-OptionalTask {
     [switch]$All
   )
 
-  $selected = $All.IsPresent
-
-  if (-not $selected) {
-    $selected = Confirm-Choice -Title $Name -Message 'Run this task?'
-  }
-
-  if (-not $selected) {
-    Write-Status -Level Skip -Message "$Name was skipped"
-    return
-  }
-
-  & $Action
-}
-
-function Set-WindowsMouseConfiguration {
-  [CmdletBinding(SupportsShouldProcess)]
-  param(
-    [ValidateRange(1, 20)]
-    [int]$Speed = 6
-  )
-
-  $path = 'HKCU:\Control Panel\Mouse'
-  $desiredSettings = [ordered]@{
-    MouseSensitivity = [string]$Speed
-    MouseSpeed       = '0'
-    MouseThreshold1  = '0'
-    MouseThreshold2  = '0'
-  }
-
-  $currentSettings = Get-ItemProperty -Path $path
-  $changeRequired = $false
-
-  foreach ($setting in $desiredSettings.GetEnumerator()) {
-    $currentProperty = $currentSettings.PSObject.Properties[$setting.Key]
-
-    if (
-      $null -eq $currentProperty -or
-      [string]$currentProperty.Value -ne [string]$setting.Value
-    ) {
-      $changeRequired = $true
-      break
+  if (-not $All) {
+    $choices = @(
+      [System.Management.Automation.Host.ChoiceDescription]::new('&Yes', 'Run this task.')
+      [System.Management.Automation.Host.ChoiceDescription]::new('&No', 'Skip this task.')
+    )
+    if ($Host.UI.PromptForChoice($Name, 'Run this task?', $choices, 1) -ne 0) {
+      Write-Status -Level Skip -Message "$Name was skipped"
+      return
     }
   }
 
-  if (-not $changeRequired) {
-    Write-Status -Level Skip -Message 'Mouse settings are already configured'
-    return
-  }
-
-  $action = "Set pointer speed to $Speed and disable mouse acceleration"
-
-  if (-not $PSCmdlet.ShouldProcess($path, $action)) {
-    return
-  }
-
-  Write-Status -Level Step -Message 'Configuring mouse settings'
-
-  foreach ($setting in $desiredSettings.GetEnumerator()) {
-    Set-ItemProperty -Path $path -Name $setting.Key -Value $setting.Value -Confirm:$false
-  }
-
-  Write-Status -Level Success -Message 'Mouse settings were configured'
+  Write-Status -Level Step -Message $Name
+  & $Action
 }
 
-function Set-WindowsKeyboardConfiguration {
-  [CmdletBinding(SupportsShouldProcess)]
-  param()
+function Invoke-NativeCommand {
+  [CmdletBinding()]
+  [OutputType([int])]
+  param(
+    [Parameter(Mandatory)]
+    [string]$FilePath,
 
-  $path = 'HKCU:\Control Panel\Keyboard'
-  $name = 'KeyboardDelay'
-  $desiredValue = '0'
-  $currentValue = Get-ItemPropertyValue -Path $path -Name $name
+    [string[]]$Arguments = @(),
+    [int[]]$SuccessExitCodes = @(0)
+  )
 
-  if ([string]$currentValue -eq $desiredValue) {
-    Write-Status -Level Skip -Message 'Keyboard settings are already configured'
-    return
+  # PowerShell 7 preference; a harmless local variable in 5.1.
+  # Expected nonzero codes are handled explicitly below.
+  $PSNativeCommandUseErrorActionPreference = $false
+  Write-Verbose "Executing: $FilePath $($Arguments -join ' ')"
+
+  # Preserve diagnostics, but keep stdout out of the returned exit code.
+  & $FilePath @Arguments | Out-Host
+  $exitCode = $LASTEXITCODE
+  if ($null -eq $exitCode) {
+    throw "$FilePath did not provide a process exit code."
   }
-
-  if (-not $PSCmdlet.ShouldProcess($path, "Set $name to $desiredValue")) {
-    return
+  if ($exitCode -notin $SuccessExitCodes) {
+    $unsignedCode = if ($exitCode -lt 0) { [long]$exitCode + 4294967296 } else { [long]$exitCode }
+    $hexCode = '0x{0:X8}' -f $unsignedCode
+    throw "$FilePath exited with code $hexCode ($exitCode). Arguments: $($Arguments -join ' ')"
   }
-
-  Write-Status -Level Step -Message 'Configuring keyboard settings'
-  Set-ItemProperty -Path $path -Name $name -Value $desiredValue -Confirm:$false
-  Write-Status -Level Success -Message 'Keyboard settings were configured'
+  return [int]$exitCode
 }
 
-function Set-WindowsHardwareClockToUtc {
+# Registry tasks share the same compare/confirm/write behavior.
+function Set-RegistryValue {
   [CmdletBinding(SupportsShouldProcess)]
-  param()
+  [OutputType([bool])]
+  param(
+    [Parameter(Mandatory)]
+    [string]$Path,
 
-  $path = 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation'
-  $name = 'RealTimeIsUniversal'
-  $currentValue = Get-ItemPropertyValue -Path $path -Name $name -ErrorAction SilentlyContinue
+    [Parameter(Mandatory)]
+    [System.Collections.IDictionary]$Values,
 
-  if ($currentValue -eq 1) {
-    Write-Status -Level Skip -Message 'The hardware clock is already interpreted as UTC'
-    return
+    [ValidateSet('String', 'DWord')]
+    [string]$Type = 'String'
+  )
+
+  $key = if (Test-Path -LiteralPath $Path) { Get-Item -LiteralPath $Path } else { $null }
+  $changedNames = @(
+    foreach ($name in $Values.Keys) {
+      if ($null -eq $key -or $null -eq $key.GetValue($name) -or
+        $key.GetValue($name) -ne $Values[$name] -or $key.GetValueKind($name) -ne $Type) {
+        $name
+      }
+    }
+  )
+
+  if ($changedNames.Count -eq 0) {
+    Write-Status -Level Skip -Message 'Registry values are already configured'
+    return $false
+  }
+  $changes = ($changedNames | ForEach-Object { "$_=$($Values[$_])" }) -join ', '
+  if (-not $PSCmdlet.ShouldProcess($Path, "Set $Type values: $changes")) {
+    return $false
   }
 
-  if (-not $PSCmdlet.ShouldProcess($path, "Set $name to 1")) {
-    return
+  if ($null -eq $key) {
+    New-Item -Path $Path -Force -Confirm:$false | Out-Null
   }
-
-  Write-Status -Level Step -Message 'Configuring Windows to interpret the hardware clock as UTC'
-
-  $propertyParams = @{
-    Path         = $path
-    Name         = $name
-    Value        = 1
-    PropertyType = 'DWord'
-    Force        = $true
-    Confirm      = $false
+  foreach ($name in $changedNames) {
+    $propertyParams = @{
+      LiteralPath  = $Path
+      Name         = $name
+      Value        = $Values[$name]
+      PropertyType = $Type
+      Force        = $true
+      Confirm      = $false
+    }
+    New-ItemProperty @propertyParams | Out-Null
   }
-
-  New-ItemProperty @propertyParams | Out-Null
-  Write-Status -Level Success -Message 'The hardware clock is now interpreted as UTC'
+  Write-Status -Level Success -Message 'Registry values were saved'
+  return $true
 }
 
 function Set-WindowsTimeZone {
   [CmdletBinding(SupportsShouldProcess)]
   param(
     [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
     [string]$Id
   )
 
-  $currentTimeZone = Get-TimeZone
-
-  if ($currentTimeZone.Id -eq $Id) {
-    Write-Status -Level Skip -Message "The time zone is already set to '$Id'"
+  if ((Get-TimeZone).Id -eq $Id) {
+    Write-Status -Level Skip -Message "The time zone is already '$Id'"
     return
   }
-
-  $action = "Change time zone from '$($currentTimeZone.Id)' to '$Id'"
-
-  if (-not $PSCmdlet.ShouldProcess('System time zone', $action)) {
-    return
+  if ($PSCmdlet.ShouldProcess('System time zone', "Set time zone to '$Id'")) {
+    Set-TimeZone -Id $Id -Confirm:$false
+    Write-Status -Level Success -Message "The time zone was set to '$Id'"
   }
-
-  Write-Status -Level Step -Message "Setting the time zone to '$Id'"
-  Set-TimeZone -Id $Id -Confirm:$false
-  Write-Status -Level Success -Message "The time zone was set to '$Id'"
 }
 
 function Sync-WindowsTime {
   [CmdletBinding(SupportsShouldProcess)]
   param()
 
-  $service = Get-Service -Name 'w32time' -ErrorAction Stop
-
-  if ($service.StartType -eq 'Disabled') {
-    $message = 'The Windows Time service is disabled. Check local or domain policy before enabling it.'
-    Write-Status -Level Warning -Message $message
+  # One confirmation covers both the prerequisite and the dependent command.
+  if (-not $PSCmdlet.ShouldProcess('Windows Time service',
+      'Start if needed and synchronize with the existing time source')) {
     return
   }
-
-  if ($service.Status -ne 'Running') {
-    if ($PSCmdlet.ShouldProcess('Windows Time service', 'Start service')) {
-      Write-Status -Level Step -Message 'Starting the Windows Time service'
-      Start-Service -Name 'w32time' -Confirm:$false
-    }
-  }
-
-  if (-not $PSCmdlet.ShouldProcess(
-      'Windows Time service',
-      'Rediscover the configured time source and synchronize time'
-    )) {
-    return
-  }
-
-  Write-Status -Level Step -Message 'Synchronizing time using the configured Windows time source'
-
-  $w32tmPath = Join-Path $env:SystemRoot 'System32\w32tm.exe'
-
   try {
-    Invoke-NativeCommand -FilePath $w32tmPath -Arguments @('/resync', '/rediscover') -Quiet | Out-Null
+    $service = Get-Service -Name 'w32time' -ErrorAction Stop
+    if ($service.StartType -eq 'Disabled') {
+      Write-Status -Level Warning -Message 'Windows Time is disabled. Check local or domain policy.'
+      return
+    }
+    if ($service.Status -ne 'Running') {
+      Start-Service -Name 'w32time' -Confirm:$false -ErrorAction Stop
+    }
+    $w32tmPath = Join-Path $env:SystemRoot 'System32\w32tm.exe'
+    Invoke-NativeCommand -FilePath $w32tmPath -Arguments @('/resync', '/rediscover') | Out-Null
     Write-Status -Level Success -Message 'Windows time synchronization completed'
   }
   catch {
-    # A temporary network or time-source failure should not invalidate the
-    # remaining workstation configuration.
-    Write-Status -Level Warning -Message "Immediate time synchronization failed: $($_.Exception.Message)"
+    Write-Status -Level Warning -Message "Time synchronization failed: $($_.Exception.Message)"
   }
-}
-
-function Enable-WindowsHyperV {
-  [CmdletBinding(SupportsShouldProcess)]
-  [OutputType([bool])]
-  param()
-
-  $featureName = 'Microsoft-Hyper-V'
-  $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName -ErrorAction Stop
-
-  if ($feature.State -eq 'Enabled') {
-    Write-Status -Level Skip -Message 'Hyper-V is already enabled'
-    return $false
-  }
-
-  if ($feature.State -eq 'EnablePending') {
-    Write-Status -Level Warning -Message 'Hyper-V is pending activation and requires a restart'
-    return $true
-  }
-
-  if (-not $PSCmdlet.ShouldProcess('Hyper-V', 'Enable Windows optional feature')) {
-    return $false
-  }
-
-  Write-Status -Level Step -Message 'Enabling Hyper-V'
-
-  $featureParams = @{
-    Online      = $true
-    FeatureName = $featureName
-    All         = $true
-    NoRestart   = $true
-    ErrorAction = 'Stop'
-    Confirm     = $false
-  }
-
-  $result = Enable-WindowsOptionalFeature @featureParams
-
-  if ($result.RestartNeeded) {
-    Write-Status -Level Success -Message 'Hyper-V was enabled and requires a restart'
-    return $true
-  }
-
-  Write-Status -Level Success -Message 'Hyper-V was enabled'
-  return $false
-}
-
-function Get-WinGetPath {
-  [CmdletBinding()]
-  [OutputType([string])]
-  param()
-
-  $wingetCommand = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
-
-  if ($null -eq $wingetCommand) {
-    return $null
-  }
-
-  return $wingetCommand.Source
-}
-
-function Register-WinGet {
-  [CmdletBinding(SupportsShouldProcess)]
-  param()
-
-  if (-not $PSCmdlet.ShouldProcess(
-      'App Installer',
-      'Register WinGet for the current user'
-    )) {
-    return
-  }
-
-  Write-Status -Level Step -Message 'Registering App Installer for the current user'
-
-  try {
-    $packageName = 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe'
-    Add-AppxPackage -RegisterByFamilyName -MainPackage $packageName -ErrorAction Stop
-  }
-  catch {
-    throw ('WinGet was not found and App Installer registration failed. ' + $_.Exception.Message)
-  }
-
-  Write-Status -Level Success -Message 'App Installer was registered successfully'
-}
-
-function Update-WinGetClient {
-  [CmdletBinding(SupportsShouldProcess)]
-  param(
-    [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
-    [string]$WingetPath
-  )
-
-  $packageId = 'Microsoft.AppInstaller'
-
-  if (-not $PSCmdlet.ShouldProcess($packageId, 'Update the WinGet client')) {
-    return
-  }
-
-  Write-Status -Level Step -Message 'Checking for a WinGet client update'
-
-  $arguments = @(
-    'upgrade'
-    '--id'
-    $packageId
-    '--exact'
-    '--source'
-    'winget'
-    '--silent'
-    '--disable-interactivity'
-    '--accept-source-agreements'
-    '--accept-package-agreements'
-  )
-
-  $successExitCodes = @(
-    0
-    $script:WingetUpdateNotApplicableExitCode
-  )
-
-  $commandParams = @{
-    FilePath         = $WingetPath
-    Arguments        = $arguments
-    SuccessExitCodes = $successExitCodes
-  }
-
-  $exitCode = Invoke-NativeCommand @commandParams
-
-  switch ($exitCode) {
-    0 {
-      Write-Status -Level Success -Message 'The WinGet client was updated successfully'
-    }
-    { $_ -eq $script:WingetUpdateNotApplicableExitCode } {
-      Write-Status -Level Skip -Message 'The WinGet client is already up to date'
-    }
-  }
-}
-
-function Enable-WinGetProxyCommandLineOption {
-  [CmdletBinding(SupportsShouldProcess)]
-  param(
-    [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
-    [string]$WingetPath
-  )
-
-  $settingName = 'ProxyCommandLineOptions'
-
-  if (-not $PSCmdlet.ShouldProcess('WinGet', "Enable $settingName")) {
-    return
-  }
-
-  Write-Status -Level Step -Message "Enabling the WinGet $settingName setting"
-
-  $arguments = @(
-    'settings'
-    '--enable'
-    $settingName
-    '--disable-interactivity'
-  )
-
-  Invoke-NativeCommand -FilePath $WingetPath -Arguments $arguments -Quiet | Out-Null
-  Write-Status -Level Success -Message "The WinGet $settingName setting was enabled"
 }
 
 function Initialize-WinGet {
   [CmdletBinding(SupportsShouldProcess)]
   param()
 
-  $wingetPath = Get-WinGetPath
+  if (-not $PSCmdlet.ShouldProcess('WinGet',
+      'Register if needed, update App Installer and enable proxy command-line options')) {
+    return
+  }
 
-  if ([string]::IsNullOrWhiteSpace($wingetPath)) {
-    Write-Status -Level Step -Message 'WinGet was not found; attempting App Installer registration'
-    Register-WinGet
-    $wingetPath = Get-WinGetPath
-
-    if ([string]::IsNullOrWhiteSpace($wingetPath)) {
-      if ($WhatIfPreference) {
-        Write-Status -Level Warning -Message 'Further WinGet changes require WinGet to be available'
-        return
-      }
-
-      throw 'App Installer was registered, but winget.exe is still unavailable in the current session.'
+  $wingetCommand = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
+  if ($null -eq $wingetCommand) {
+    # Appx may need Windows PowerShell compatibility when running in PS 7.
+    if ($PSEdition -eq 'Core') {
+      Import-Module Appx -UseWindowsPowerShell -ErrorAction Stop
+    }
+    $package = Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' -AllUsers -ErrorAction Stop
+    if (-not $package) {
+      throw 'App Installer is not installed. Install it from Microsoft, then rerun this task.'
+    }
+    $registrationParams = @{
+      RegisterByFamilyName = $true
+      MainPackage          = 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe'
+      ErrorAction          = 'Stop'
+    }
+    Add-AppxPackage @registrationParams
+    $wingetCommand = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -eq $wingetCommand) {
+      throw 'App Installer registration completed, but winget.exe is unavailable. Check its app execution alias and PATH, then reopen PowerShell.'
     }
   }
 
-  Write-Verbose "WinGet path: $wingetPath"
+  # 0x8A15002B means no applicable update, not necessarily the newest release.
+  $noApplicableUpdate = -1978335189
+  $upgradeParams = @{
+    FilePath         = $wingetCommand.Source
+    Arguments        = @(
+      'upgrade', '--id', 'Microsoft.AppInstaller', '--exact', '--source', 'winget',
+      '--silent', '--disable-interactivity', '--accept-source-agreements', '--accept-package-agreements'
+    )
+    SuccessExitCodes = @(0, $noApplicableUpdate)
+  }
+  $exitCode = Invoke-NativeCommand @upgradeParams
+  if ($exitCode -eq $noApplicableUpdate) {
+    Write-Status -Level Skip -Message 'No applicable WinGet client update was found'
+  }
+  else {
+    Write-Status -Level Success -Message 'The WinGet client was updated'
+  }
 
-  # App Installer contains the WinGet client and is updated before its settings
-  # are configured.
-  Update-WinGetClient -WingetPath $wingetPath
-
-  # Resolve the app execution alias again after updating App Installer.
-  $wingetPath = Get-WinGetPath
-
-  Enable-WinGetProxyCommandLineOption -WingetPath $wingetPath
+  $wingetCommand = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
+  if ($null -eq $wingetCommand) {
+    throw 'winget.exe is unavailable after the update. Reopen PowerShell and rerun this task.'
+  }
+  $arguments = @('settings', '--enable', 'ProxyCommandLineOptions', '--disable-interactivity')
+  Invoke-NativeCommand -FilePath $wingetCommand.Source -Arguments $arguments | Out-Null
+  Write-Status -Level Success -Message 'WinGet permits --proxy and --no-proxy; no proxy address was configured'
 }
 
-Invoke-OptionalTask -Name 'Mouse configuration' -All:$All -Action {
-  Set-WindowsMouseConfiguration -Speed $MouseSpeed
+function Enable-WindowsHyperV {
+  [CmdletBinding(SupportsShouldProcess)]
+  param()
+
+  $featureName = 'Microsoft-Hyper-V'
+  # Enumerating first distinguishes an unavailable feature from a DISM error.
+  $feature = Get-WindowsOptionalFeature -Online -ErrorAction Stop |
+  Where-Object FeatureName -eq $featureName
+  if (-not $feature) {
+    Write-Status -Level Warning -Message 'Hyper-V is unavailable in this Windows edition/image.'
+    return
+  }
+  switch ($feature.State) {
+    'Enabled' {
+      Write-Status -Level Skip -Message 'Hyper-V is already enabled'
+      return
+    }
+    'EnablePending' {
+      $script:restartRequired = $true
+      Write-Status -Level Skip -Message 'Hyper-V is already pending activation'
+      return
+    }
+    'DisablePending' {
+      $script:restartRequired = $true
+      throw 'Hyper-V is pending removal. Restart Windows before enabling it again.'
+    }
+  }
+  if (-not $PSCmdlet.ShouldProcess('Hyper-V', 'Enable Windows optional feature without restarting')) {
+    return
+  }
+
+  # DISM does not support -Confirm; the enclosing ShouldProcess is the guard.
+  $featureParams = @{
+    Online      = $true
+    FeatureName = $featureName
+    All         = $true
+    NoRestart   = $true
+    ErrorAction = 'Stop'
+  }
+  $result = Enable-WindowsOptionalFeature @featureParams
+  $script:restartRequired = $script:restartRequired -or $result.RestartNeeded
+  Write-Status -Level Success -Message 'Hyper-V was enabled'
 }
 
-Invoke-OptionalTask -Name 'Keyboard configuration' -All:$All -Action {
-  Set-WindowsKeyboardConfiguration
+# Validate local prerequisites before any configuration changes.
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+  throw 'This script requires Windows.'
 }
-
-Invoke-OptionalTask -Name 'Time zone configuration' -All:$All -Action {
-  Set-WindowsTimeZone -Id $TimeZoneId
+if (-not [Environment]::Is64BitProcess) {
+  throw 'Run this script in 64-bit PowerShell.'
 }
+[TimeZoneInfo]::FindSystemTimeZoneById($TimeZoneId) | Out-Null
+$currentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+Write-Status -Level Step -Message "User: $currentUser; PowerShell $($PSVersionTable.PSVersion) ($PSEdition)"
+Write-Host 'HKCU settings and App Installer registration target this account.'
 
-Invoke-OptionalTask -Name 'Time synchronization' -All:$All -Action {
-  Sync-WindowsTime
-}
+# Tasks stay in execution order; registry settings are kept next to their task.
+try {
+  Invoke-OptionalTask -Name 'Mouse configuration' -All:$All -Action {
+    $values = [ordered]@{
+      MouseSensitivity = [string]$MouseSpeed
+      MouseSpeed       = '0'
+      MouseThreshold1  = '0'
+      MouseThreshold2  = '0'
+    }
+    if (Set-RegistryValue -Path 'HKCU:\Control Panel\Mouse' -Values $values) {
+      $script:signOutRequired = $true
+    }
+  }
 
-Invoke-OptionalTask -Name 'UTC hardware clock configuration' -All:$All -Action {
-  Set-WindowsHardwareClockToUtc
-}
+  Invoke-OptionalTask -Name 'Keyboard configuration' -All:$All -Action {
+    if (Set-RegistryValue -Path 'HKCU:\Control Panel\Keyboard' -Values @{ KeyboardDelay = '0' }) {
+      $script:signOutRequired = $true
+    }
+  }
 
-Invoke-OptionalTask -Name 'WinGet bootstrap' -All:$All -Action {
-  Initialize-WinGet
-}
+  Invoke-OptionalTask -Name 'Time zone configuration' -All:$All -Action {
+    Set-WindowsTimeZone -Id $TimeZoneId
+  }
 
-$rebootRequired = [bool](
+  Invoke-OptionalTask -Name 'UTC hardware clock configuration' -All:$All -Action {
+    $registryParams = @{
+      Path   = 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation'
+      Values = @{ RealTimeIsUniversal = 1 }
+      Type   = 'DWord'
+    }
+    if (Set-RegistryValue @registryParams) {
+      $script:restartRequired = $true
+    }
+  }
+
+  Invoke-OptionalTask -Name 'Time synchronization' -All:$All -Action {
+    Sync-WindowsTime
+  }
+
+  Invoke-OptionalTask -Name 'WinGet bootstrap' -All:$All -Action {
+    Initialize-WinGet
+  }
+
   Invoke-OptionalTask -Name 'Hyper-V' -All:$All -Action {
     Enable-WindowsHyperV
   }
-)
 
-if ($WhatIfPreference) {
-  Write-Status -Level Success -Message 'The WhatIf evaluation completed successfully'
+  if ($WhatIfPreference) {
+    Write-Status -Level Success -Message 'WhatIf preview completed; no configuration changes were applied'
+  }
+  elseif ($script:hadWarnings) {
+    Write-Status -Level Warning -Message 'Windows bootstrap finished with warnings; review the messages above'
+  }
+  else {
+    Write-Status -Level Success -Message 'Windows bootstrap completed successfully'
+  }
 }
-else {
-  Write-Status -Level Success -Message 'Windows bootstrap completed successfully'
-
-  if ($rebootRequired) {
-    Write-Status -Level Warning -Message 'Restart Windows to complete the requested changes'
+finally {
+  if (-not $WhatIfPreference) {
+    if ($script:restartRequired) {
+      Write-Host 'Restart Windows to finish applying the changes.' -ForegroundColor Yellow
+    }
+    elseif ($script:signOutRequired) {
+      Write-Host 'Sign out and back in to apply mouse/keyboard settings.' -ForegroundColor Yellow
+    }
   }
 }
