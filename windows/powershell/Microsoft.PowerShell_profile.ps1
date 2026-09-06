@@ -18,14 +18,18 @@ if ($useConsoleUi) {
     Import-Module PSReadLine
 
     $readLineOptions = @{
-      EditMode            = 'Windows'
-      HistoryNoDuplicates = $true
-      ShowToolTips        = $true
-      PredictionSource    = 'History'
-      PredictionViewStyle = 'ListView'
-      BellStyle           = 'None'
+      EditMode                      = 'Windows'
+      HistoryNoDuplicates           = $true
+      HistorySearchCursorMovesToEnd = $true
+      ShowToolTips                  = $true
+      PredictionSource              = 'HistoryAndPlugin'
+      PredictionViewStyle           = 'ListView'
+      BellStyle                     = 'None'
     }
     Set-PSReadLineOption @readLineOptions
+
+    Set-PSReadLineKeyHandler -Chord UpArrow   -Function HistorySearchBackward
+    Set-PSReadLineKeyHandler -Chord DownArrow -Function HistorySearchForward
   }
 }
 
@@ -103,7 +107,7 @@ function Edit-Hosts {
 
 #region Aliases
 
-Set-Alias -Name ports -Value Get-ListeningPort
+Set-Alias -Name port -Value Get-ListeningPort
 Set-Alias -Name cpath -Value Copy-Path
 Set-Alias -Name pathl -Value Get-PathList
 Set-Alias -Name ll -Value Get-ChildItem
