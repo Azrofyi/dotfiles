@@ -6,7 +6,7 @@
 
 [core]
     excludesFile = ~/.gitignore_global
-    autocrlf = false
+    autocrlf = input
     editor = code --wait
 
 [fetch]

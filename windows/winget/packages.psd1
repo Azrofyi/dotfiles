@@ -119,8 +119,12 @@
     }
 
     Git                = @{
-      Id   = 'Git.Git'
-      Name = 'Git'
+      Id             = 'Git.Git'
+      Name           = 'Git'
+      AdditionalArgs = @(
+        '--custom'
+        '/COMPONENTS=gitlfs,assoc /o:DefaultBranchOption=main /o:CurlOption=WinSSL /o:CRLFOption=LFOnly'
+      )
     }
 
     DockerDesktop      = @{
