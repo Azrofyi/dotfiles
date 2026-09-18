@@ -353,6 +353,57 @@ function Enable-WindowsHyperV {
   Write-Status -Level Success -Message 'Hyper-V was enabled'
 }
 
+function Enable-WindowsSandbox {
+  [CmdletBinding(SupportsShouldProcess)]
+  param()
+
+  $featureName = 'Containers-DisposableClientVM'
+
+  $feature = Get-WindowsOptionalFeature -Online -ErrorAction Stop |
+  Where-Object FeatureName -eq $featureName
+
+  if (-not $feature) {
+    Write-Status -Level Warning -Message 'Windows Sandbox is unavailable in this Windows edition/image.'
+    return
+  }
+
+  switch ($feature.State) {
+    'Enabled' {
+      Write-Status -Level Skip -Message 'Windows Sandbox is already enabled'
+      return
+    }
+
+    'EnablePending' {
+      $script:restartRequired = $true
+      Write-Status -Level Skip -Message 'Windows Sandbox is already pending activation'
+      return
+    }
+
+    'DisablePending' {
+      $script:restartRequired = $true
+      throw 'Windows Sandbox is pending removal. Restart Windows before enabling it again.'
+    }
+  }
+
+  if (-not $PSCmdlet.ShouldProcess(
+      'Windows Sandbox',
+      'Enable Windows optional feature without restarting'
+    )) {
+    return
+  }
+
+  $result = Enable-WindowsOptionalFeature `
+    -Online `
+    -FeatureName $featureName `
+    -All `
+    -NoRestart `
+    -ErrorAction Stop
+
+  $script:restartRequired = $script:restartRequired -or $result.RestartNeeded
+
+  Write-Status -Level Success -Message 'Windows Sandbox was enabled'
+}
+
 # Validate local prerequisites before any configuration changes.
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
   throw 'This script requires Windows.'
@@ -410,6 +461,10 @@ try {
 
   Invoke-OptionalTask -Name 'Hyper-V' -All:$All -Action {
     Enable-WindowsHyperV
+  }
+
+  Invoke-OptionalTask -Name 'Enable-WindowsSandbox' -All:$All -Action {
+    Enable-WindowsSandbox
   }
 
   if ($WhatIfPreference) {

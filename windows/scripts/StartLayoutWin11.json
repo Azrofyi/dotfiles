@@ -1,0 +1,41 @@
+{
+  "applyOnce": true,
+  "pinnedList": [
+    {
+      "desktopAppLink": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\This PC.lnk"
+    },
+    {
+      "desktopAppLink": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\System Tools\\Control Panel.lnk"
+    },
+    {
+      "desktopAppLink": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools.lnk"
+    },
+    {
+      "desktopAppLink": "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\System Tools\\Task Manager.lnk"
+    },
+    {
+      "desktopAppLink": "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\System Tools\\Run.lnk"
+    },
+    {
+      "packagedAppId": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"
+    },
+    {
+      "packagedAppId": "Microsoft.WindowsStore_8wekyb3d8bbwe!App"
+    },
+    {
+      "desktopAppLink": "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools\\Hyper-V Manager.lnk"
+    },
+    {
+      "packagedAppId": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App"
+    },
+    {
+      "packagedAppId": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
+    },
+    {
+      "packagedAppId": "Microsoft.Paint_8wekyb3d8bbwe!App"
+    },
+    {
+      "packagedAppId": "Microsoft.ScreenSketch_8wekyb3d8bbwe!App"
+    }
+  ]
+}
