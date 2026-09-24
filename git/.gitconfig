@@ -1,6 +1,3 @@
-[include]
-    path = ~/.gitconfig.local
-
 [init]
     defaultBranch = main
 
@@ -31,3 +28,6 @@
 
     lg = log --graph --oneline --decorate --all
     ph = log --graph --pretty=pretty-history --abbrev-commit --date=relative
+
+[include]
+    path = ~/.gitconfig.local
